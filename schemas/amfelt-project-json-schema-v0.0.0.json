@@ -1,0 +1,933 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://amfelt.com/schemas/pcf/v0.0.0",
+  "$ref": "#/$defs/Project",
+  "$defs": {
+    "ColumnAxes": {
+      "properties": {
+        "extract": {
+          "$ref": "#/$defs/ColumnSelector",
+          "description": "Extract selects which columns are read from the source. Defaults to\nall columns when unset."
+        },
+        "compare": {
+          "$ref": "#/$defs/ColumnSelector",
+          "description": "Compare selects which columns participate in change detection (drift\nand history comparisons). Defaults to all extracted columns when unset."
+        },
+        "expose": {
+          "$ref": "#/$defs/ColumnSelector",
+          "description": "Expose selects which columns are surfaced in the bridge view. Defaults\nto all extracted columns when unset."
+        },
+        "config": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ColumnConfig"
+          },
+          "type": "object",
+          "description": "Config holds per-column bridge-view overrides, keyed by source column name."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Per-column configuration for an object: the extract/compare/expose glob axes plus per-column bridge-view overrides.",
+      "x-example-yaml": "extract:\n  exclude: [\"_raw_blob\"]         # never read this column from the source\ncompare:\n  exclude: [\"updated_at\"]        # ignore this column when detecting changes\nexpose:\n  include: [\"order_id\", \"total\"] # only these appear in the bridge view\nconfig:\n  total:\n    transform: \"value / 100\"     # SQL expression; \"value\" = the source column\n    target: totalDollars         # rename in the bridge view"
+    },
+    "ColumnConfig": {
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "Target column name in the bridge VIEW. Defaults to the source column when empty."
+        },
+        "bridge": {
+          "type": "boolean",
+          "description": "Bridge controls whether the column appears in the bridge VIEW. Default: true."
+        },
+        "transform": {
+          "type": "string",
+          "description": "Transform is a SQL expression for the bridge VIEW SELECT list;\n\"value\" is the placeholder for the source column reference."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Per-column bridge-VIEW configuration (keyed by the source column name in ColumnAxes.config)."
+    },
+    "ColumnSelector": {
+      "properties": {
+        "include": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Include lists glob patterns for column names to select. Defaults to\n[\"*\"] (all columns) when empty."
+        },
+        "exclude": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Exclude lists glob patterns for column names to drop, applied after Include."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "An include/exclude glob-list over column names."
+    },
+    "CustomProperty": {
+      "properties": {
+        "property": {
+          "type": "string",
+          "description": "The name of the key. Names should be in camel case–the same as if they were permanent\nproperties in the contract."
+        },
+        "value": {
+          "description": "The value of the key."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "A list of key/value pairs for custom properties."
+    },
+    "Dbt": {
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enabled turns dbt emission on. Off by default: a project that omits the dbt key gets no dbt directory."
+        },
+        "path": {
+          "type": "string",
+          "description": "Path is the repo-relative directory the dbt tree owns. Defaults to \"dbt\"."
+        },
+        "scaffold": {
+          "type": "boolean",
+          "description": "Scaffold emits a one-shot staging model per bridge object. Off by default, because the scaffold is a handover\nartifact: it is written only when absent, and once written the platform neither overwrites nor deletes it."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "DbtJSON is the serialized form of the dbt emission block."
+    },
+    "Description": {
+      "properties": {
+        "purpose": {
+          "type": "string",
+          "description": "Purpose describes why this project exists."
+        },
+        "usage": {
+          "type": "string",
+          "description": "Usage describes how this project is intended to be used."
+        },
+        "limitations": {
+          "type": "string",
+          "description": "Limitations notes known constraints or caveats for this project."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Free-text notes describing a project's intent, for readers of amfelt.yaml rather than for the engine."
+    },
+    "Docs": {
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enabled turns documentation emission on. Off by default: a project that omits the docs key gets no\ndocumentation directory. Setting this back to false stops regeneration but deletes nothing already written."
+        },
+        "path": {
+          "type": "string",
+          "description": "Path is the repo-relative directory the documentation tree owns outright: regeneration is a tree replace, and\na page for an object that no longer exists in the contract is deleted. Defaults to \"docs\"."
+        },
+        "flavor": {
+          "type": "string",
+          "description": "Flavor selects the output conventions. Defaults to \"hugo\"."
+        },
+        "erdMaxObjects": {
+          "type": "integer",
+          "description": "ERDMaxObjects caps how many objects one entity-level diagram may draw before it is replaced by a note instead\nof being drawn. Defaults to 50."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "DocsJSON is the serialized form of the documentation emission block."
+    },
+    "Job": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name identifies this job within the project. Must be unique among jobs."
+        },
+        "source": {
+          "type": "string",
+          "description": "Source is the name of the source this job reads from. Must match the\nname of an entry in the project's sources list."
+        },
+        "target": {
+          "type": "string",
+          "description": "Target is the name of the target this job writes to. Must match the\nname of an entry in the project's targets list."
+        },
+        "layer": {
+          "type": "string",
+          "description": "Layer is the data-warehouse layer this job populates: one of \"staging\",\n\"history\", \"bridge\", \"business\", or \"all\". Used to namespace generated\nschemas/tables."
+        },
+        "writeMode": {
+          "type": "string",
+          "description": "WriteMode records the intended load strategy for objects in this job's\nselection: \"append\", \"upsert\" or \"replace\". The value is recorded but\nnot acted on. The staging layer always replaces (it is truncated and\nreloaded on every run), so all three values land identically; how rows\naccumulate across runs is decided by historyMode at the history layer.\nOmitting the key is the correct authoring shape. The agent warns once\nper job when the writeMode it resolves is set to anything other than\n\"replace\"; removing the key or spelling it \"replace\" both silence that\nwarning, because both name what the staging layer already does."
+        },
+        "schemaPrefix": {
+          "type": "string",
+          "description": "SchemaPrefix overrides the generated schema/dataset name prefix for\nthis job's objects. Defaults to the project's naming convention when empty."
+        },
+        "maxParallel": {
+          "type": "integer",
+          "description": "MaxParallel is the number of objects this job processes concurrently.\n0 or unset runs sequentially (one object at a time); values above 1\nenable concurrency, further capped by the target's connection limit."
+        },
+        "select": {
+          "$ref": "#/$defs/Select",
+          "description": "Select is the glob-based object selection over the source contract."
+        },
+        "runs": {
+          "items": {
+            "$ref": "#/$defs/Run"
+          },
+          "type": "array",
+          "description": "Runs are the (strategy, schedule) executions of this job's selection."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "source",
+        "target"
+      ],
+      "description": "A pipeline job: which source and target to move data between, how to select objects, and when to run.",
+      "x-example-yaml": "name: crm-sync\nsource: crm\ntarget: warehouse\nlayer: staging\nselect:\n  include: [\"public.*\"]\n  objects:\n    public.orders:\n      historyMode: scd2\n      columns:\n        config:\n          total:\n            transform: \"value / 100\"\n            target: totalDollars\nruns:\n  - strategy: incremental\n    schedule: \"0 * * * *\""
+    },
+    "ObjectOverride": {
+      "properties": {
+        "tableType": {
+          "type": "string",
+          "description": "TableType is the business classification of this object: one of\n\"master\", \"transaction\", or \"reference\". It picks the default history\nmode when HistoryMode is unset. Values from before the taxonomy was\nreduced still load and are mapped onto it."
+        },
+        "historyMode": {
+          "type": "string",
+          "description": "HistoryMode overrides the selection default for this object: one of\n\"scd2\", \"scd2_event_time\", \"scd1\", \"snapshot\", \"append\", \"dedup_append\",\nor \"replace\"."
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Cursor is the column used to detect new/changed rows for incremental loads."
+        },
+        "cursorType": {
+          "type": "string",
+          "enum": [
+            "timestamp",
+            "sequence"
+          ],
+          "description": "CursorType says how the cursor column orders rows: \"timestamp\" or\n\"sequence\". Required when cursor is set and a run is incremental; it\nis never guessed."
+        },
+        "lookback": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "description": "Lookback re-reads rows just behind the stored cursor on each\nincremental run: a duration (e.g. \"5m\") for a timestamp cursor, a\nnon-negative integer for a sequence cursor. Defaults to \"5m\" for a\ntimestamp cursor and 0 for a sequence cursor."
+        },
+        "deleteDetection": {
+          "type": "string",
+          "enum": [
+            "none",
+            "fullRun",
+            "keyScan",
+            "softDelete"
+          ],
+          "description": "DeleteDetection selects how deleted source rows are found: \"none\",\n\"fullRun\" (a full run reconciles deletes), \"keyScan\" (compare the\nsource keys), or \"softDelete\" (a column marks deleted rows; needs\nsoftDeleteColumn and softDeleteValue). Defaults to \"fullRun\"."
+        },
+        "softDeleteColumn": {
+          "type": "string",
+          "description": "SoftDeleteColumn is the column that marks a row as deleted when\ndeleteDetection is \"softDelete\"."
+        },
+        "softDeleteValue": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "description": "SoftDeleteValue is the value of softDeleteColumn that marks a row as\ndeleted when deleteDetection is \"softDelete\"."
+        },
+        "window": {
+          "$ref": "#/$defs/Window",
+          "description": "Window reloads a trailing time window on each incremental run. Its\nsize defaults to lateArrivalThreshold."
+        },
+        "eventTimeCol": {
+          "type": "string",
+          "description": "EventTimeCol is the column holding the event's business timestamp, used\nfor event-time ordering and late-arrival handling."
+        },
+        "dedupKey": {
+          "type": "string",
+          "description": "DedupKey is the column (or comma-separated columns) that uniquely\nidentifies a row, used to deduplicate on load."
+        },
+        "lateArrivalThreshold": {
+          "type": "string",
+          "description": "LateArrivalThreshold is the maximum delay tolerated for late-arriving\nevents before they are dropped or flagged, expressed as a duration\nstring (e.g. \"24h\")."
+        },
+        "columns": {
+          "$ref": "#/$defs/ColumnAxes",
+          "description": "Columns configures the extract/compare/expose glob axes and per-column\nbridge-view overrides for this object."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Per-object operational config."
+    },
+    "Plugin": {
+      "properties": {
+        "plugin": {
+          "type": "string",
+          "description": "Name of the plugin."
+        },
+        "path": {
+          "type": "string",
+          "description": "Path of the plugin relative to the project's Amfelt directory."
+        },
+        "version": {
+          "type": "string",
+          "description": "Semantic version of the plugin."
+        },
+        "registry": {
+          "type": "string",
+          "description": "Plugin registry to use."
+        },
+        "address": {
+          "type": "string",
+          "description": "Address is the network address (host:port) of the plugin's gRPC\nserver. Only used when Registry is \"grpc\"."
+        },
+        "insecure": {
+          "type": "boolean",
+          "description": "Insecure disables TLS for the gRPC connection to this plugin. Only\nused when Registry is \"grpc\". Default: false (TLS required)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "plugin"
+      ],
+      "description": "Plugin defines an Amfelt plugin configuration.",
+      "x-example-yaml": "plugin: postgres\nversion: 1.2.3\nregistry: local"
+    },
+    "PluginManager": {
+      "properties": {
+        "source": {
+          "items": {
+            "$ref": "#/$defs/Plugin"
+          },
+          "type": "array",
+          "description": "List of configured source plugins."
+        },
+        "target": {
+          "items": {
+            "$ref": "#/$defs/Plugin"
+          },
+          "type": "array",
+          "description": "List of configured target plugins."
+        },
+        "transformer": {
+          "items": {
+            "$ref": "#/$defs/Plugin"
+          },
+          "type": "array",
+          "description": "List of configured transformer plugins."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "PluginManager manages the configured plugins, grouped by category."
+    },
+    "Policy": {
+      "properties": {
+        "onPatch": {
+          "type": "string",
+          "description": "OnPatch is the action taken for a patch-level (backward-compatible)\nschema change: \"stop\", \"warn_continue\", or \"adapt\". Empty falls\nthrough to the built-in floor (\"warn_continue\")."
+        },
+        "onMinor": {
+          "type": "string",
+          "description": "OnMinor is the action taken for a minor-level (additive) schema\nchange: \"stop\", \"warn_continue\", or \"adapt\". Empty falls through to\nthe built-in floor (\"adapt\")."
+        },
+        "onMajor": {
+          "type": "string",
+          "description": "OnMajor is the action taken for a major-level (breaking) schema\nchange: \"stop\", \"warn_continue\", or \"adapt\". Empty falls through to\nthe built-in floor (\"stop\")."
+        },
+        "overrides": {
+          "items": {
+            "$ref": "#/$defs/PolicyOverride"
+          },
+          "type": "array",
+          "description": "Overrides lists per-object/column pattern overrides, checked before\nthe level actions above; the first matching override wins."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Policy is an authorable schema-drift policy: per-semver-level actions plus object/column pattern overrides."
+    },
+    "PolicyOverride": {
+      "properties": {
+        "match": {
+          "type": "string",
+          "description": "Match is a glob pattern over the object name, or `\"\u003cobject\u003e.\u003ccolumn\u003e\"`,\nthat this override applies to."
+        },
+        "onPatch": {
+          "type": "string",
+          "description": "OnPatch overrides the policy's patch-level action for matching\nobjects/columns. Unset means no override for this level."
+        },
+        "onMinor": {
+          "type": "string",
+          "description": "OnMinor overrides the policy's minor-level action for matching\nobjects/columns. Unset means no override for this level."
+        },
+        "onMajor": {
+          "type": "string",
+          "description": "OnMajor overrides the policy's major-level action for matching\nobjects/columns. Unset means no override for this level."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "match"
+      ],
+      "description": "PolicyOverride overrides per-level actions for objects/columns matching Match (a glob over `\"\u003cobject\u003e.\u003ccolumn\u003e\"`)."
+    },
+    "Project": {
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "amfeltProject",
+            "infusalProject"
+          ],
+          "description": "Kind identifies the document as an Amfelt project file. Must be\n\"amfeltProject\"; \"infusalProject\" is still accepted from files written\nbefore the rename."
+        },
+        "apiVersion": {
+          "type": "string",
+          "enum": [
+            "v0.0.0"
+          ],
+          "description": "APIVersion is the PCF (project configuration file) format version this\ndocument conforms to. Must be exactly \"v0.0.0\"."
+        },
+        "id": {
+          "type": "string",
+          "description": "ID is the project's stable, unique identifier. Not meant to change once assigned."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name is the human-readable project name shown in the UI and CLI."
+        },
+        "version": {
+          "type": "string",
+          "description": "Version is the project's own version string, incremented by the\nproject owner as the configuration evolves."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "production",
+            "test",
+            "development"
+          ],
+          "description": "Status is the project's lifecycle stage: \"production\", \"test\", or\n\"development\"."
+        },
+        "description": {
+          "$ref": "#/$defs/Description",
+          "description": "Description holds free-text purpose, usage, and limitation notes for the project."
+        },
+        "environment": {
+          "type": "string",
+          "enum": [
+            "development",
+            "test",
+            "acceptance",
+            "production"
+          ],
+          "description": "Environment is the DTAP stage this project instance runs in:\n\"development\", \"test\", \"acceptance\", or \"production\"."
+        },
+        "allowCrossEnvironment": {
+          "type": "boolean",
+          "description": "AllowCrossEnvironment permits sources and targets from different\nenvironments to be combined in the same job. Default: false (disallowed)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "CreatedAt is the timestamp the project was first created. Set once and left untouched thereafter."
+        },
+        "maxTargetConnections": {
+          "type": "integer",
+          "description": "MaxTargetConnections is the global ceiling on concurrent target connections\nacross all schemas in this project run. 0 means no project-level cap."
+        },
+        "driftPolicy": {
+          "$ref": "#/$defs/Policy",
+          "description": "DriftPolicy is the project-level schema-drift policy. Per-source\noverrides live on Source.driftPolicy; an unset level falls through to the\nengine's built-in floor."
+        },
+        "docs": {
+          "$ref": "#/$defs/Docs",
+          "description": "Docs configures Markdown documentation emission into the project repository."
+        },
+        "dbt": {
+          "$ref": "#/$defs/Dbt",
+          "description": "Dbt configures dbt project emission into the project repository."
+        },
+        "sql": {
+          "$ref": "#/$defs/SQL",
+          "description": "SQL configures generated-SQL emission into the project repository."
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/Source"
+          },
+          "type": "array",
+          "description": "Sources lists the data sources available to this project's jobs."
+        },
+        "targets": {
+          "items": {
+            "$ref": "#/$defs/Target"
+          },
+          "type": "array",
+          "description": "Targets lists the data warehouse targets available to this project's jobs."
+        },
+        "jobs": {
+          "items": {
+            "$ref": "#/$defs/Job"
+          },
+          "type": "array",
+          "description": "Jobs lists the pipeline jobs that move data from a source to a target."
+        },
+        "transformers": {
+          "items": {
+            "$ref": "#/$defs/Transformer"
+          },
+          "type": "array",
+          "description": "Transformers lists the transformation jobs applied after data lands in the target."
+        },
+        "plugins": {
+          "$ref": "#/$defs/PluginManager",
+          "description": "Plugins lists the source, target, and transformer plugins this project depends on."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "apiVersion",
+        "id",
+        "name",
+        "version",
+        "status"
+      ],
+      "description": "The root of an amfelt.yaml project file: identity and metadata, the drift policy, and the sources, targets, jobs, transformers, and plugins that make up the pipeline."
+    },
+    "Role": {
+      "properties": {
+        "role": {
+          "type": "string",
+          "description": "Name of the IAM role that provides access to the dataset."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the IAM role and its permissions."
+        },
+        "access": {
+          "type": "string",
+          "description": "The type of access provided by the IAM role."
+        },
+        "firstLevelApprovers": {
+          "type": "string",
+          "description": "The name(s) of the first-level approver(s) of the role."
+        },
+        "secondLevelApprovers": {
+          "type": "string",
+          "description": "The name(s) of the second-level approver(s) of the role."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "role"
+      ],
+      "description": "Role is an IAM role that grants access to the dataset, together with the approvers who can grant it."
+    },
+    "Run": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name identifies this run within the job's Runs list. Optional when a\njob has only one run."
+        },
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "full",
+            "incremental",
+            "cdc"
+          ],
+          "description": "Strategy is the load strategy this run executes: \"full\", \"incremental\", or \"cdc\"."
+        },
+        "schedule": {
+          "type": "string",
+          "description": "Schedule is the cron expression controlling when this run executes.\nUnset means the run is triggered manually or by the job's default schedule."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "strategy"
+      ],
+      "description": "One scheduled execution of a job's selection under one strategy.",
+      "x-example-yaml": "name: hourly\nstrategy: incremental            # full | incremental | cdc\nschedule: \"0 * * * *\"            # cron; omit for on-demand runs"
+    },
+    "SQL": {
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enabled turns emission on. Off by default: a project that omits the sql key gets no directory."
+        },
+        "root": {
+          "type": "string",
+          "description": "Root is the repo-relative directory the emitted tree lives under. Defaults to \"sql\"."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "SQLJSON is the serialized form of the generated-SQL emission block."
+    },
+    "SchemaAbbrev": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name is the schema name as it exists in the source system."
+        },
+        "abbreviation": {
+          "type": "string",
+          "description": "Abbreviation is the short identifier substituted for Name in generated\nschema/table names."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "abbreviation"
+      ],
+      "description": "Maps a source schema name to its DWH abbreviation."
+    },
+    "Select": {
+      "properties": {
+        "defaults": {
+          "$ref": "#/$defs/SelectDefaults",
+          "description": "Defaults holds selection settings applied to every matched object\nunless a per-object entry in Objects overrides them."
+        },
+        "include": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Include lists glob patterns for object names to select from the source\ncontract. Defaults to [\"*\"] (all objects) when empty."
+        },
+        "exclude": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Exclude lists glob patterns for object names to drop from the\nselection, applied after Include."
+        },
+        "objects": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ObjectOverride"
+          },
+          "type": "object",
+          "description": "Objects maps an object name or glob to per-object operational\noverrides (history mode, cursor, column axes, etc.)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Glob-based selection of objects from the source contract, with optional per-object overrides.",
+      "x-example-yaml": "include: [\"public.*\", \"sales.*\"]\nexclude: [\"public.audit_*\"]\ndefaults:\n  historyMode: scd2\nobjects:\n  public.orders:\n    tableType: transaction\n    columns:\n      extract:\n        exclude: [\"_raw_blob\"]"
+    },
+    "SelectDefaults": {
+      "properties": {
+        "historyMode": {
+          "type": "string",
+          "description": "HistoryMode is the default history-tracking mode for matched objects:\none of \"scd2\", \"scd2_event_time\", \"scd1\", \"snapshot\", \"append\",\n\"dedup_append\", or \"replace\"."
+        },
+        "writeMode": {
+          "type": "string",
+          "description": "WriteMode records the intended load strategy for matched objects:\n\"append\", \"upsert\" or \"replace\". The value is recorded but not acted\non. The staging layer always replaces, so all three values land\nidentically; use historyMode to control how rows accumulate across\nruns. Omitting the key is the correct authoring shape. This default is\nwhat the agent resolves first, and it warns when the resolved writeMode\nis set to anything other than \"replace\"; removing the key or spelling\nit \"replace\" both silence that warning."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Selection defaults applied to every matched object unless a per-object override sets its own value."
+    },
+    "Server": {
+      "properties": {
+        "server": {
+          "type": "string",
+          "description": "Identifier of the server."
+        },
+        "type": {
+          "type": "string",
+          "description": "Type of the server."
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the server."
+        },
+        "environment": {
+          "type": "string",
+          "description": "Environment of the server."
+        },
+        "roles": {
+          "items": {
+            "$ref": "#/$defs/Role"
+          },
+          "type": "array",
+          "description": "List of roles that have access to the server."
+        },
+        "account": {
+          "type": "string",
+          "description": "Account used by the server."
+        },
+        "catalog": {
+          "type": "string",
+          "description": "Name of the catalog."
+        },
+        "database": {
+          "type": "string",
+          "description": "Name of the database."
+        },
+        "dataset": {
+          "type": "string",
+          "description": "Name of the dataset."
+        },
+        "delimiter": {
+          "type": "string",
+          "description": "Delimiter."
+        },
+        "endpointUrl": {
+          "type": "string",
+          "description": "Server endpoint."
+        },
+        "format": {
+          "type": "string",
+          "description": "File format."
+        },
+        "host": {
+          "type": "string",
+          "description": "Host name or IP address."
+        },
+        "location": {
+          "type": "string",
+          "description": "A URL to a location."
+        },
+        "path": {
+          "type": "string",
+          "description": "Relative or absolute path to the data file(s)."
+        },
+        "port": {
+          "type": "integer",
+          "description": "Port to the server. No default value is assumed for custom servers."
+        },
+        "project": {
+          "type": "string",
+          "description": "Project name."
+        },
+        "region": {
+          "type": "string",
+          "description": "Cloud region."
+        },
+        "regionName": {
+          "type": "string",
+          "description": "Region name."
+        },
+        "schema": {
+          "type": "string",
+          "description": "Name of the schema."
+        },
+        "serviceName": {
+          "type": "string",
+          "description": "Name of the service."
+        },
+        "stagingDir": {
+          "type": "string",
+          "description": "Staging directory."
+        },
+        "stream": {
+          "type": "string",
+          "description": "Name of the data stream."
+        },
+        "warehouse": {
+          "type": "string",
+          "description": "Name of the cluster or warehouse."
+        },
+        "customProperties": {
+          "items": {
+            "$ref": "#/$defs/CustomProperty"
+          },
+          "type": "array",
+          "description": "A list of key/value pairs for custom properties."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "description": "Data source details of where data is physically stored."
+    },
+    "Source": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name identifies this source within the project. Must be unique among\nsources and is referenced by Job.Source."
+        },
+        "plugin": {
+          "type": "string",
+          "description": "Plugin is the name of the source plugin used to connect (e.g.\n\"postgres\", \"mysql\"). Must match a plugin configured in Plugins.Source."
+        },
+        "contract": {
+          "type": "string",
+          "description": "Contract is the path to (or name of) the data contract describing this\nsource's schema. Optional when objects are selected via glob instead\nof an explicit contract file."
+        },
+        "server": {
+          "$ref": "#/$defs/Server",
+          "description": "Server describes the connection details for this source, taking\nprecedence over any server defined in the associated contract.\nOptional for secretRef-only sources or sources that rely solely on the\ncontract's server."
+        },
+        "secretRef": {
+          "type": "string",
+          "description": "SecretRef is the vault reference path for this source's connection credentials."
+        },
+        "abbreviation": {
+          "type": "string",
+          "description": "Abbreviation is the short identifier for this source in the DWH naming\nconvention, used as the first segment of the generated schema prefix.\nMandatory for multi-schema imports. Lowercase alphanumeric, 2-10 characters."
+        },
+        "schemas": {
+          "items": {
+            "$ref": "#/$defs/SchemaAbbrev"
+          },
+          "type": "array",
+          "description": "Schemas maps source schema names to their DWH abbreviations. Populated\nfor multi-schema imports; empty for single-schema sources."
+        },
+        "driftPolicy": {
+          "$ref": "#/$defs/Policy",
+          "description": "DriftPolicy overrides the project-level schema-drift policy for this source."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "plugin"
+      ],
+      "description": "A connection to a source system: which plugin reads it, how it authenticates, and the contract describing its schema.",
+      "x-example-yaml": "name: crm\nplugin: postgres\nsecretRef: infisical/crm-creds   # vault reference for credentials\nserver:                          # non-secret connection routing\n  type: postgres\n  host: db.acme.io\n  port: 5432\n  database: crm\ncontract: contracts/crm.odcs.yaml"
+    },
+    "Target": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name identifies this target within the project. Must be unique among\ntargets and is referenced by Job.Target."
+        },
+        "plugin": {
+          "type": "string",
+          "description": "Plugin is the name of the target plugin used to connect (e.g.\n\"snowflake\", \"postgres\"). Must match a plugin configured in Plugins.Target."
+        },
+        "server": {
+          "$ref": "#/$defs/Server",
+          "description": "Server describes the connection details for this target."
+        },
+        "secretRef": {
+          "type": "string",
+          "description": "SecretRef is the vault reference path for this target's connection credentials."
+        },
+        "maxConnections": {
+          "type": "integer",
+          "description": "MaxConnections caps the number of concurrent connections opened to\nthis target. 0 falls through to the plugin's default."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "plugin"
+      ],
+      "description": "A connection to a target data warehouse: which plugin writes to it, how it authenticates, and its connection limits.",
+      "x-example-yaml": "name: warehouse\nplugin: snowflake\nsecretRef: infisical/wh-creds\nserver:\n  type: snowflake\n  account: acme-prod\n  database: ANALYTICS\nmaxConnections: 4"
+    },
+    "Transformer": {
+      "properties": {
+        "plugin": {
+          "type": "string",
+          "description": "Plugin is the name of the transformer plugin used to run these jobs\n(e.g. \"dbt\"). Must match a plugin configured in Plugins.Transformer."
+        },
+        "jobs": {
+          "items": {
+            "$ref": "#/$defs/TransformerJob"
+          },
+          "type": "array",
+          "description": "Jobs lists the transformation jobs this transformer runs."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "plugin",
+        "jobs"
+      ],
+      "description": "A transformer plugin and the jobs it runs after data has landed in a target."
+    },
+    "TransformerJob": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name identifies this transformer job within its transformer's Jobs list."
+        },
+        "source": {
+          "type": "string",
+          "description": "Source is the name of the source this transformer job reads from.\nMust match the name of an entry in the project's sources list."
+        },
+        "target": {
+          "type": "string",
+          "description": "Target is the name of the target this transformer job writes to. Must\nmatch the name of an entry in the project's targets list."
+        },
+        "select": {
+          "$ref": "#/$defs/Select",
+          "description": "Select is the glob-based object selection this transformer job operates over."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "source",
+        "target"
+      ],
+      "description": "One transformation job: which source and target objects it transforms between, and how objects are selected."
+    },
+    "Window": {
+      "properties": {
+        "column": {
+          "type": "string",
+          "description": "Column is the timestamp column the window is measured on."
+        },
+        "size": {
+          "type": "string",
+          "description": "Size is the window length as a duration (e.g. \"24h\"). Defaults to the\nobject's lateArrivalThreshold; without either, the window is invalid."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "column"
+      ],
+      "description": "Window reload settings: the rows whose column value falls inside the trailing window are read again on each incremental run."
+    }
+  },
+  "version": "v0.0.0",
+  "x-example-yaml": "# A complete amfelt.yaml. Only the header (kind, apiVersion) and project\n# identity (id, name, version, status) are required; every section is optional.\nkind: amfeltProject\napiVersion: v0.0.0\nid: 6aeafdc1-ed62-4c8f-bf0a-da1061c98cdb\nname: acme-analytics\nversion: \"1.0.0\"\nstatus: production\ndescription:\n  purpose: Load the CRM database into the analytics warehouse.\n  usage: Deploy with `amfelt deploy`.\ncreatedAt: \"2026-07-05T10:00:00Z\"\ndriftPolicy:\n  onMinor: adapt   # additive source changes are adapted automatically\n  onMajor: stop    # breaking source changes halt the run\nsources:\n  - name: crm\n    plugin: postgres\n    secretRef: infisical/crm-creds   # vault reference for credentials\n    server:\n      type: postgres\n      host: db.acme.io\n      port: 5432\n      database: crm\n    # objects are discovered by glob (see the job's select); a source may\n    # instead pin an explicit ODCS contract file with `contract: \u003cpath\u003e`.\ntargets:\n  - name: warehouse\n    plugin: snowflake\n    secretRef: infisical/wh-creds\n    server:\n      type: snowflake\n      account: acme-prod\n      database: ANALYTICS\n    maxConnections: 4\njobs:\n  - name: crm-sync\n    source: crm\n    target: warehouse\n    layer: staging\n    select:\n      include: [\"public.*\"]\n      exclude: [\"public.audit_*\"]\n      objects:\n        public.orders:\n          tableType: transaction\n          historyMode: scd2\n          columns:\n            expose:\n              include: [\"order_id\", \"total\"]\n            config:\n              total:\n                transform: \"value / 100\"   # \"value\" = the source column\n                target: totalDollars\n    runs:\n      - strategy: incremental\n        schedule: \"0 * * * *\"   # hourly (cron)\nplugins:\n  source:\n    - plugin: postgres\n      version: 1.2.3\n      registry: local\n  target:\n    - plugin: snowflake\n      version: 2.0.0\n      registry: local"
+}

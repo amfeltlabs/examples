@@ -346,3 +346,26 @@ jobs:
             > "$RUNNER_TEMP/run2.actual"
           diff -u "$RUNNER_TEMP/run2.expected" "$RUNNER_TEMP/run2.actual"
           echo "ok: the source matches runs.run2.source, the after address, and the deletion"
+
+  # Validates the tutorial's ready-made project file, jaffle/project/amfelt.yaml, against
+  # the project-file schema. The schema is a copy of core's; schemas/README.md names the
+  # commit it was taken from. The validator is pinned to one release.
+  project:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install the validator
+        run: python3 -m pip install --disable-pip-version-check check-jsonschema==0.38.2
+
+      - name: Validate the project file
+        run: |
+          check-jsonschema --schemafile schemas/amfelt-project-json-schema-v0.0.0.json \
+            jaffle/project/amfelt.yaml
