@@ -6,8 +6,13 @@
 --        -f jaffle/db/load.sql
 --
 -- A failure anywhere rolls the whole load back, so the database never holds a partial
--- corpus that looks loaded. The file assumes the caller's transaction and opens none of its
--- own; a caller that wraps it (a container seed, for example) supplies the transaction.
+-- corpus that looks loaded. The file opens no transaction of its own: the caller supplies
+-- one, with --single-transaction or a BEGIN around it, and the file refuses to run outside
+-- one (see THE TRANSACTION GUARD). It turns psql's ON_ERROR_STOP on, and leaves it on, so
+-- a failure stops psql even when the caller forgot the flag. In a container's
+-- /docker-entrypoint-initdb.d, use initdb.sh beside this file: the postgres image runs a
+-- .sql file there without a transaction, which the guard rejects.
+--
 -- Check the files against jaffle/SHA256SUMS before loading them; this file pins their
 -- row counts, not their bytes.
 --
@@ -53,8 +58,30 @@
 -- Every object is named with its schema, and the search path is pinned to pg_catalog
 -- alone, so nothing resolves through search_path's "$user" or public entries: no schema
 -- the caller happens to have can receive a table or shadow a type, function or operator
--- used here.
-SET search_path = pg_catalog;
+-- used here. SET LOCAL keeps the pin inside the transaction, so it does not leak into what
+-- the caller runs after it.
+--
+-- THE TRANSACTION GUARD
+--
+-- The first statement records its transaction id in a transaction-local setting; the
+-- second fails unless it runs in that same transaction. Under psql's autocommit each
+-- statement is its own transaction, so the second sees another id and an empty setting,
+-- and the load stops before it creates anything. Comparing transaction ids, not
+-- timestamps, leaves nothing to clock resolution.
+\set ON_ERROR_STOP on
+SELECT pg_catalog.set_config('jaffle.load_xact', pg_catalog.pg_current_xact_id()::text, true)
+    AS jaffle_load_xact \gset
+DO $$
+BEGIN
+    IF pg_catalog.current_setting('jaffle.load_xact', true)
+       IS DISTINCT FROM pg_catalog.pg_current_xact_id()::text THEN
+        RAISE EXCEPTION 'jaffle load: load.sql must run inside one transaction'
+            USING HINT = 'Run psql with --single-transaction (-1), or wrap the file in BEGIN and COMMIT.';
+    END IF;
+END
+$$;
+
+SET LOCAL search_path = pg_catalog;
 
 \if :{?datadir}
 \else

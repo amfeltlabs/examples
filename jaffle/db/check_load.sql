@@ -12,13 +12,18 @@
 --
 -- What it asserts:
 --   1. the only non-system schemas besides public are sales, catalog and marketing; they
---      hold exactly the seven tables of the model, with its columns in its order; no
---      relation anywhere is named raw_*; public holds no relation, function or type;
---   2. every schema, table and column carries a non-empty comment, read from
---      pg_description (obj_description, and col_description by attnum);
+--      hold exactly the seven tables of the model, as ordinary permanent tables and
+--      nothing else, with its columns in its order and of its exact types (format_type,
+--      typmods included); NOT NULL is on the primary-key columns and nowhere else; no
+--      column has a default, identity or generation expression; no relation anywhere is
+--      named raw_*; public holds no relation, function or type;
+--   2. every schema, table and column carries a comment that holds a character other
+--      than whitespace (Unicode whitespace included), read from pg_description
+--      (obj_description, and col_description by attnum);
 --   3. each table's primary key, in column order (catalog.supplies: id, then sku), and
 --      exactly the six foreign keys, by name, columns, target and target columns, all
---      validated and none cascading;
+--      validated, not deferrable, MATCH SIMPLE and none cascading; no other constraint,
+--      no index but the primary keys' and no trigger but the foreign keys' own;
 --   4. every table holds as many rows as its CSV file holds records, counted here from the
 --      files, independently of load.sql's pinned counts; customer_addresses.csv holds one
 --      record per customer; every customer has a non-empty street, postal code, city and
@@ -35,16 +40,54 @@ SET search_path = pg_catalog;
 
 CREATE TEMPORARY TABLE failures (n serial, check_name text, detail text);
 
--- The model: table, then its columns in order.
-CREATE TEMPORARY TABLE model (sch text, tbl text, cols text[], pk text[], csv text);
+-- The model: each table with its primary key and its file, and each column with its exact
+-- type as format_type() prints it, in column order.
+CREATE TEMPORARY TABLE model (sch text, tbl text, pk text[], csv text);
 INSERT INTO pg_temp.model VALUES
-    ('sales', 'customers', '{id,name,street,postal_code,city,country}', '{id}', 'customers.csv'),
-    ('sales', 'stores', '{id,name,opened_at,tax_rate}', '{id}', 'stores.csv'),
-    ('sales', 'orders', '{id,customer_id,store_id,ordered_at,subtotal,tax_paid,order_total}', '{id}', 'orders.csv'),
-    ('sales', 'order_items', '{id,order_id,sku}', '{id}', 'order_items.csv'),
-    ('catalog', 'products', '{sku,name,type,price,description}', '{sku}', 'products.csv'),
-    ('catalog', 'supplies', '{id,sku,name,cost,perishable}', '{id,sku}', 'supplies.csv'),
-    ('marketing', 'tweets', '{id,customer_id,tweeted_at,content}', '{id}', 'tweets.csv');
+    ('sales', 'customers', '{id}', 'customers.csv'),
+    ('sales', 'stores', '{id}', 'stores.csv'),
+    ('sales', 'orders', '{id}', 'orders.csv'),
+    ('sales', 'order_items', '{id}', 'order_items.csv'),
+    ('catalog', 'products', '{sku}', 'products.csv'),
+    ('catalog', 'supplies', '{id,sku}', 'supplies.csv'),
+    ('marketing', 'tweets', '{id}', 'tweets.csv');
+
+CREATE TEMPORARY TABLE model_columns (sch text, tbl text, pos int, col text, typ text);
+INSERT INTO pg_temp.model_columns VALUES
+    ('sales', 'customers', 1, 'id', 'uuid'),
+    ('sales', 'customers', 2, 'name', 'text'),
+    ('sales', 'customers', 3, 'street', 'text'),
+    ('sales', 'customers', 4, 'postal_code', 'text'),
+    ('sales', 'customers', 5, 'city', 'text'),
+    ('sales', 'customers', 6, 'country', 'text'),
+    ('sales', 'stores', 1, 'id', 'uuid'),
+    ('sales', 'stores', 2, 'name', 'text'),
+    ('sales', 'stores', 3, 'opened_at', 'timestamp without time zone'),
+    ('sales', 'stores', 4, 'tax_rate', 'numeric(6,4)'),
+    ('sales', 'orders', 1, 'id', 'uuid'),
+    ('sales', 'orders', 2, 'customer_id', 'uuid'),
+    ('sales', 'orders', 3, 'store_id', 'uuid'),
+    ('sales', 'orders', 4, 'ordered_at', 'timestamp without time zone'),
+    ('sales', 'orders', 5, 'subtotal', 'integer'),
+    ('sales', 'orders', 6, 'tax_paid', 'integer'),
+    ('sales', 'orders', 7, 'order_total', 'integer'),
+    ('sales', 'order_items', 1, 'id', 'uuid'),
+    ('sales', 'order_items', 2, 'order_id', 'uuid'),
+    ('sales', 'order_items', 3, 'sku', 'text'),
+    ('catalog', 'products', 1, 'sku', 'text'),
+    ('catalog', 'products', 2, 'name', 'text'),
+    ('catalog', 'products', 3, 'type', 'text'),
+    ('catalog', 'products', 4, 'price', 'integer'),
+    ('catalog', 'products', 5, 'description', 'text'),
+    ('catalog', 'supplies', 1, 'id', 'text'),
+    ('catalog', 'supplies', 2, 'sku', 'text'),
+    ('catalog', 'supplies', 3, 'name', 'text'),
+    ('catalog', 'supplies', 4, 'cost', 'integer'),
+    ('catalog', 'supplies', 5, 'perishable', 'boolean'),
+    ('marketing', 'tweets', 1, 'id', 'uuid'),
+    ('marketing', 'tweets', 2, 'customer_id', 'uuid'),
+    ('marketing', 'tweets', 3, 'tweeted_at', 'timestamp without time zone'),
+    ('marketing', 'tweets', 4, 'content', 'text');
 
 -- User schemas: everything but the system schemas and the temporary ones.
 CREATE TEMPORARY VIEW user_schemas AS
@@ -54,7 +97,30 @@ CREATE TEMPORARY VIEW user_schemas AS
        AND n.nspname NOT LIKE 'pg\_temp\_%'
        AND n.nspname NOT LIKE 'pg\_toast\_temp\_%';
 
--- 1. Schemas and tables.
+-- The tables of the three model schemas, whatever their kind, and their live columns.
+CREATE TEMPORARY VIEW model_relations AS
+    SELECT c.oid, n.nspname::text AS sch, c.relname::text AS tbl, c.relkind, c.relpersistence
+      FROM pg_catalog.pg_class AS c
+      JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+     WHERE n.nspname IN ('sales', 'catalog', 'marketing');
+
+CREATE TEMPORARY VIEW model_attributes AS
+    SELECT r.oid AS relid, r.sch, r.tbl, a.attnum, a.attname::text AS col,
+           pg_catalog.format_type(a.atttypid, a.atttypmod) AS typ,
+           a.attnotnull, a.atthasdef, a.attidentity, a.attgenerated
+      FROM pg_temp.model_relations AS r
+      JOIN pg_catalog.pg_attribute AS a ON a.attrelid = r.oid
+     WHERE r.relkind NOT IN ('i', 'I', 'S')
+       AND a.attnum > 0 AND NOT a.attisdropped;
+
+-- A comment is blank unless it holds a character that is not whitespace, Unicode
+-- whitespace (the no-break spaces included) and the byte-order mark counted as whitespace.
+CREATE FUNCTION pg_temp.is_blank(comment text) RETURNS boolean
+    LANGUAGE sql IMMUTABLE
+    RETURN comment IS NULL
+        OR comment ~ '^[ \t\n\v\f\r\u0085   -​    　﻿[:space:]]*$';
+
+-- 1. Schemas, tables and columns.
 
 INSERT INTO pg_temp.failures (check_name, detail)
 SELECT 'schemas', format('schemas are %s, expected catalog, marketing, sales (and public)',
@@ -64,28 +130,53 @@ SELECT 'schemas', format('schemas are %s, expected catalog, marketing, sales (an
 HAVING coalesce(array_agg(nspname::text ORDER BY nspname), '{}')
        IS DISTINCT FROM '{catalog,marketing,sales}'::text[];
 
+-- Every relation in the three schemas except indexes, which are checked with the
+-- constraints: views, sequences and composite types count as unexpected relations.
 INSERT INTO pg_temp.failures (check_name, detail)
 SELECT 'tables', format('%s %I.%I', CASE WHEN m.tbl IS NULL THEN 'unexpected relation' ELSE 'missing table' END,
-                        coalesce(m.sch, a.sch), coalesce(m.tbl, a.tbl))
-  FROM (SELECT n.nspname::text AS sch, c.relname::text AS tbl
-          FROM pg_catalog.pg_class AS c
-          JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
-         WHERE n.nspname IN ('sales', 'catalog', 'marketing')
-           AND c.relkind IN ('r', 'p', 'v', 'm', 'f')) AS a
-  FULL JOIN pg_temp.model AS m ON m.sch = a.sch AND m.tbl = a.tbl
- WHERE m.tbl IS NULL OR a.tbl IS NULL;
+                        coalesce(m.sch, r.sch), coalesce(m.tbl, r.tbl))
+  FROM (SELECT * FROM pg_temp.model_relations WHERE relkind NOT IN ('i', 'I')) AS r
+  FULL JOIN pg_temp.model AS m ON m.sch = r.sch AND m.tbl = r.tbl
+ WHERE m.tbl IS NULL OR r.tbl IS NULL;
 
 INSERT INTO pg_temp.failures (check_name, detail)
-SELECT 'tables', format('%I.%I has columns %s, expected %s', m.sch, m.tbl,
-                        array_to_string(actual.cols, ', '), array_to_string(m.cols, ', '))
+SELECT 'tables', format('%I.%I is relkind %s, persistence %s; expected an ordinary permanent table (r, p)',
+                        r.sch, r.tbl, r.relkind, r.relpersistence)
+  FROM pg_temp.model_relations AS r
+  JOIN pg_temp.model AS m ON m.sch = r.sch AND m.tbl = r.tbl
+ WHERE r.relkind <> 'r' OR r.relpersistence <> 'p';
+
+-- Names, order and exact types, typmods included: numeric(6,4) is not numeric, and
+-- timestamp(0) without time zone is not timestamp without time zone.
+INSERT INTO pg_temp.failures (check_name, detail)
+SELECT 'columns', format('%I.%I has columns (%s), expected (%s)', m.sch, m.tbl,
+                         array_to_string(actual.cols, ', '), array_to_string(want.cols, ', '))
   FROM pg_temp.model AS m
   JOIN LATERAL (
-        SELECT array_agg(a.attname::text ORDER BY a.attnum) AS cols
-          FROM pg_catalog.pg_attribute AS a
-         WHERE a.attrelid = to_regclass(format('%I.%I', m.sch, m.tbl))
-           AND a.attnum > 0 AND NOT a.attisdropped) AS actual ON true
+        SELECT array_agg(format('%s %s', a.col, a.typ) ORDER BY a.attnum) AS cols
+          FROM pg_temp.model_attributes AS a
+         WHERE a.sch = m.sch AND a.tbl = m.tbl) AS actual ON true
+  JOIN LATERAL (
+        SELECT array_agg(format('%s %s', c.col, c.typ) ORDER BY c.pos) AS cols
+          FROM pg_temp.model_columns AS c
+         WHERE c.sch = m.sch AND c.tbl = m.tbl) AS want ON true
  WHERE to_regclass(format('%I.%I', m.sch, m.tbl)) IS NOT NULL
-   AND actual.cols IS DISTINCT FROM m.cols;
+   AND actual.cols IS DISTINCT FROM want.cols;
+
+-- NOT NULL exactly on the primary-key columns: every other column stays nullable.
+INSERT INTO pg_temp.failures (check_name, detail)
+SELECT 'columns', format('%I.%I.%I is %s, expected %s', a.sch, a.tbl, a.col,
+                         CASE WHEN a.attnotnull THEN 'NOT NULL' ELSE 'nullable' END,
+                         CASE WHEN a.col = ANY (m.pk) THEN 'NOT NULL (primary key)' ELSE 'nullable' END)
+  FROM pg_temp.model_attributes AS a
+  JOIN pg_temp.model AS m ON m.sch = a.sch AND m.tbl = a.tbl
+ WHERE a.attnotnull IS DISTINCT FROM (a.col = ANY (m.pk));
+
+-- No default, identity or generated column.
+INSERT INTO pg_temp.failures (check_name, detail)
+SELECT 'columns', format('%I.%I.%I has a default, identity or generation expression', a.sch, a.tbl, a.col)
+  FROM pg_temp.model_attributes AS a
+ WHERE a.atthasdef OR a.attidentity <> '' OR a.attgenerated <> '';
 
 INSERT INTO pg_temp.failures (check_name, detail)
 SELECT 'tables', format('relation %I.%I is named raw_*', n.nspname, c.relname)
@@ -113,27 +204,20 @@ INSERT INTO pg_temp.failures (check_name, detail)
 SELECT 'comments', format('schema %I has no comment', n.nspname)
   FROM pg_catalog.pg_namespace AS n
  WHERE n.nspname IN ('sales', 'catalog', 'marketing')
-   AND coalesce(btrim(obj_description(n.oid, 'pg_namespace')), '') = '';
+   AND pg_temp.is_blank(obj_description(n.oid, 'pg_namespace'));
 
 INSERT INTO pg_temp.failures (check_name, detail)
-SELECT 'comments', format('table %s has no comment', c.oid::regclass)
-  FROM pg_catalog.pg_class AS c
- WHERE c.relnamespace IN (SELECT oid FROM pg_catalog.pg_namespace
-                           WHERE nspname IN ('sales', 'catalog', 'marketing'))
-   AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
-   AND coalesce(btrim(obj_description(c.oid, 'pg_class')), '') = '';
+SELECT 'comments', format('table %I.%I has no comment', r.sch, r.tbl)
+  FROM pg_temp.model_relations AS r
+ WHERE r.relkind IN ('r', 'p', 'v', 'm', 'f')
+   AND pg_temp.is_blank(obj_description(r.oid, 'pg_class'));
 
 INSERT INTO pg_temp.failures (check_name, detail)
-SELECT 'comments', format('column %s.%I has no comment', c.oid::regclass, a.attname)
-  FROM pg_catalog.pg_class AS c
-  JOIN pg_catalog.pg_attribute AS a ON a.attrelid = c.oid
- WHERE c.relnamespace IN (SELECT oid FROM pg_catalog.pg_namespace
-                           WHERE nspname IN ('sales', 'catalog', 'marketing'))
-   AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
-   AND a.attnum > 0 AND NOT a.attisdropped
-   AND coalesce(btrim(col_description(c.oid, a.attnum)), '') = '';
+SELECT 'comments', format('column %I.%I.%I has no comment', a.sch, a.tbl, a.col)
+  FROM pg_temp.model_attributes AS a
+ WHERE pg_temp.is_blank(col_description(a.relid, a.attnum));
 
--- 3. Keys. A constraint's columns, in key order, by name.
+-- 3. Keys and constraints. A constraint's columns, in key order, by name.
 
 CREATE TEMPORARY VIEW keys AS
     SELECT k.contype::text AS contype,
@@ -149,11 +233,13 @@ CREATE TEMPORARY VIEW keys AS
               JOIN pg_catalog.pg_attribute AS a
                 ON a.attrelid = k.confrelid AND a.attnum = o.attnum) AS ref_cols,
            k.convalidated,
+           k.condeferrable,
+           k.condeferred,
+           k.confmatchtype::text AS match_type,
            k.confupdtype::text AS on_update,
            k.confdeltype::text AS on_delete
       FROM pg_catalog.pg_constraint AS k
-     WHERE k.contype IN ('p', 'f')
-       AND k.connamespace IN (SELECT oid FROM pg_catalog.pg_namespace
+     WHERE k.connamespace IN (SELECT oid FROM pg_catalog.pg_namespace
                                WHERE nspname IN ('sales', 'catalog', 'marketing'));
 
 INSERT INTO pg_temp.failures (check_name, detail)
@@ -163,9 +249,32 @@ SELECT 'keys', format('%I.%I has primary key %s, expected (%s)', m.sch, m.tbl,
   FROM pg_temp.model AS m
   LEFT JOIN pg_temp.keys AS k
     ON k.contype = 'p' AND k.tbl = format('%I.%I', m.sch, m.tbl)
- WHERE k.cols IS DISTINCT FROM m.pk;
+ WHERE k.cols IS DISTINCT FROM m.pk
+    OR k.condeferrable;
 
--- The six foreign keys, exactly: no action on update or delete ('a'), validated.
+-- No constraint but the primary and foreign keys: no UNIQUE, CHECK, EXCLUDE or constraint
+-- trigger. PostgreSQL 18 also records NOT NULL as a constraint (contype n); nullability is
+-- checked above, from attnotnull, so those rows are not counted here.
+INSERT INTO pg_temp.failures (check_name, detail)
+SELECT 'constraints', format('unexpected %s constraint %s on %s', k.contype, k.conname, k.tbl)
+  FROM pg_temp.keys AS k
+ WHERE k.contype NOT IN ('p', 'f', 'n');
+
+-- No index but the primary keys' own, and no trigger but the foreign keys' internal ones.
+INSERT INTO pg_temp.failures (check_name, detail)
+SELECT 'constraints', format('unexpected index %s on %I.%I', i.indexrelid::regclass, r.sch, r.tbl)
+  FROM pg_catalog.pg_index AS i
+  JOIN pg_temp.model_relations AS r ON r.oid = i.indrelid
+ WHERE NOT i.indisprimary;
+
+INSERT INTO pg_temp.failures (check_name, detail)
+SELECT 'constraints', format('unexpected trigger %s on %I.%I', t.tgname, r.sch, r.tbl)
+  FROM pg_catalog.pg_trigger AS t
+  JOIN pg_temp.model_relations AS r ON r.oid = t.tgrelid
+ WHERE NOT t.tgisinternal;
+
+-- The six foreign keys, exactly: validated, not deferrable, MATCH SIMPLE ('s'), and no
+-- action on update or delete ('a').
 CREATE TEMPORARY TABLE expected_fkeys (conname text, tbl text, cols text[], ref_tbl text, ref_cols text[]);
 INSERT INTO pg_temp.expected_fkeys VALUES
     ('orders_customer_id_fkey', 'sales.orders', '{customer_id}', 'sales.customers', '{id}'),
@@ -179,9 +288,11 @@ INSERT INTO pg_temp.failures (check_name, detail)
 SELECT 'keys',
        CASE WHEN k.conname IS NULL THEN format('missing foreign key %s on %s', e.conname, e.tbl)
             WHEN e.conname IS NULL THEN format('unexpected foreign key %s on %s', k.conname, k.tbl)
-            ELSE format('foreign key %s on %s is (%s) -> %s (%s), validated %s, on update %s, on delete %s',
+            ELSE format('foreign key %s on %s is (%s) -> %s (%s), validated %s, deferrable %s, '
+                        'match %s, on update %s, on delete %s',
                         k.conname, k.tbl, array_to_string(k.cols, ', '), k.ref_tbl,
-                        array_to_string(k.ref_cols, ', '), k.convalidated, k.on_update, k.on_delete)
+                        array_to_string(k.ref_cols, ', '), k.convalidated, k.condeferrable,
+                        k.match_type, k.on_update, k.on_delete)
        END
   FROM (SELECT * FROM pg_temp.keys WHERE contype = 'f') AS k
   FULL JOIN pg_temp.expected_fkeys AS e ON e.conname = k.conname AND e.tbl = k.tbl
@@ -190,6 +301,8 @@ SELECT 'keys',
     OR k.ref_tbl IS DISTINCT FROM e.ref_tbl
     OR k.ref_cols IS DISTINCT FROM e.ref_cols
     OR NOT k.convalidated
+    OR k.condeferrable OR k.condeferred
+    OR k.match_type <> 's'
     OR k.on_update <> 'a' OR k.on_delete <> 'a';
 
 -- 4. Rows. Each file's data records are counted by copying it, header skipped, into text
@@ -275,7 +388,7 @@ $$;
 -- Report.
 
 SELECT format('ok: %s', c) AS result
-  FROM unnest('{schemas,tables,public,comments,keys,rows}'::text[]) WITH ORDINALITY AS u (c, i)
+  FROM unnest('{schemas,tables,columns,public,comments,keys,constraints,rows}'::text[]) WITH ORDINALITY AS u (c, i)
  WHERE NOT EXISTS (SELECT FROM pg_temp.failures)
  ORDER BY i;
 

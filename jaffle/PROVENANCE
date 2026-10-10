@@ -142,9 +142,11 @@
 # trimmed counts above, which the shift and the renames leave unchanged, and 232
 # addresses, one per customer. It runs in one transaction, so a failure leaves nothing
 # behind. The files are read from a psql variable, datadir (default /data/jaffle); check
-# them against SHA256SUMS first. db/check_load.sql checks the loaded model, counting rows
-# from the files themselves. CI (the load job) runs both against a digest-pinned
-# PostgreSQL 17.
+# them against SHA256SUMS first. load.sql refuses to run outside one transaction; in a
+# postgres container, db/initdb.sh runs it from /docker-entrypoint-initdb.d in one.
+# db/check_load.sql checks the loaded model: types, nullability, comments, keys and
+# constraints, and row counts counted from the files themselves. CI (the load job) runs
+# load.sql and the check against a digest-pinned PostgreSQL 17.
 
 JAFGEN_VERSION=0.4.14
 JAFGEN_SOURCE=dbt-labs/jaffle-shop-generator
