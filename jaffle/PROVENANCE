@@ -109,6 +109,7 @@
 #   4. derive/addresses.py  adds a deterministic address per customer (this step; data/,
 #                           SHA256SUMS)
 #   5. data/ + SHA256SUMS   the pinned outputs of the chain (steps 3 and 4 write to them)
+#   6. db/load.sql          the consumer of data/: loads it into PostgreSQL; writes no file
 #
 # Step 3 shifts stores.opened_at, orders.ordered_at and tweets.tweeted_at by exactly 2,555
 # days, as whole days on the zone-less timestamps. 2,555 is a whole number of weeks, so
@@ -131,6 +132,21 @@
 #
 # Step 5 is complete when the pinned data lands; data/ and SHA256SUMS already cover steps 3
 # and 4.
+#
+# Step 6 reads data/ and changes none of it. db/load.sql creates the schemas sales,
+# catalog and marketing and their seven tables, with a comment on every schema, table and
+# column; copies each file into its table (customers.csv into sales.customers,
+# order_items.csv into sales.order_items, and so on), folds customer_addresses.csv into
+# sales.customers' address columns, adds the primary keys and six foreign keys after the
+# rows are in, and asserts each table's row count against the published files' counts: the
+# trimmed counts above, which the shift and the renames leave unchanged, and 232
+# addresses, one per customer. It runs in one transaction, so a failure leaves nothing
+# behind. The files are read from a psql variable, datadir (default /data/jaffle); check
+# them against SHA256SUMS first. load.sql refuses to run outside one transaction; in a
+# postgres container, db/initdb.sh runs it from /docker-entrypoint-initdb.d in one.
+# db/check_load.sql checks the loaded model: types, nullability, comments, keys and
+# constraints, and row counts counted from the files themselves. CI (the load job) runs
+# load.sql and the check against a digest-pinned PostgreSQL 17.
 
 JAFGEN_VERSION=0.4.14
 JAFGEN_SOURCE=dbt-labs/jaffle-shop-generator
