@@ -282,8 +282,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      # The structure of the expected results: every run, every layer, all seven tables, an
-      # integer each, and the reveal. counts.py is standard library only.
+      # The structure of the expected results: the job block, every run, every layer, all
+      # seven tables, an integer each, and the reveal. counts.py is standard library only.
       - name: Validate the expected counts
         run: python3 jaffle/expected/counts.py validate
 
@@ -348,8 +348,11 @@ jobs:
           echo "ok: the source matches runs.run2.source, the after address, and the deletion"
 
   # Validates the tutorial's ready-made project file, jaffle/project/amfelt.yaml, against
-  # the project-file schema. The schema is a copy of core's; schemas/README.md names the
-  # commit it was taken from. The validator is pinned to one release.
+  # the project-file schema, then checks it is the project the expected counts were made
+  # for: its job's layer, schema prefix and select.objects equal counts.yaml's job block,
+  # and its PostgreSQL plugin version equals the image pin in jaffle/project/IMAGE. The
+  # schema is a copy of core's; schemas/README.md names the commit it was taken from. The
+  # validator and PyYAML are pinned to one release each.
   project:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -363,9 +366,12 @@ jobs:
           python-version: "3.12"
 
       - name: Install the validator
-        run: python3 -m pip install --disable-pip-version-check check-jsonschema==0.38.2
+        run: python3 -m pip install --disable-pip-version-check check-jsonschema==0.38.2 pyyaml==6.0.3
 
       - name: Validate the project file
         run: |
           check-jsonschema --schemafile schemas/amfelt-project-json-schema-v0.0.0.json \
             jaffle/project/amfelt.yaml
+
+      - name: Check the project against the expected counts and the image pin
+        run: python3 jaffle/check_project.py

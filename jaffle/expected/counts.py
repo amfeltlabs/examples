@@ -41,13 +41,15 @@ BARE_TABLES = tuple(t.split(".", 1)[1] for t in SOURCE_TABLES)
 RUNS = ("run1", "run2")
 LAYERS = ("source", "staging", "history", "bridge_act", "bridge_hst")
 ADDRESS_FIELDS = ("street", "postal_code", "city", "country")
-# The history mode each table is loaded with. SCD2 closes a version on an update or a
-# delete and opens one on an insert or an update; append inserts new keys and closes
-# nothing.
-HISTORY_MODE = {
-    "customers": "scd2", "products": "scd2", "stores": "scd2", "supplies": "scd2",
-    "orders": "append", "order_items": "append", "tweets": "append",
-}
+# The job block: the job's settings and, per object, the settings select.objects holds.
+JOB_KEYS = ("layer", "schemaPrefix", "objects")
+OBJECT_KEYS = ("tableType", "historyMode")
+OPTIONAL_OBJECT_KEYS = ("eventTimeCol",)
+TABLE_TYPES = ("master", "transaction", "reference")
+# The history modes the layer rules below are written for. SCD2 closes a version on an
+# update or a delete and opens one on an insert or an update; append inserts new keys and
+# closes nothing.
+HISTORY_MODES = ("scd2", "append")
 
 KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*\Z")
 INTEGER = re.compile(r"-?(0|[1-9][0-9]*)\Z")
@@ -292,7 +294,46 @@ def check_bridge_act(problems, where, bridge, rows, holds):
         problems.append("%s.holds: must be %s, is %r" % (where, holds, bridge["holds"]))
 
 
-def check_runs(problems, runs):
+def check_job(problems, job):
+    """The job block; returns each object's history mode when every object states a valid
+    one, else None."""
+    if not check_keys(problems, "job", job, JOB_KEYS):
+        return None
+    if job["layer"] != "bridge":
+        problems.append("job.layer: the counts cover staging, history and bridge, so it must be bridge, is %r"
+                        % (job["layer"],))
+    if not isinstance(job["schemaPrefix"], str) or not KEY.match(job["schemaPrefix"]):
+        problems.append("job.schemaPrefix: must be a schema name, is %r" % (job["schemaPrefix"],))
+    if not check_keys(problems, "job.objects", job["objects"], BARE_TABLES):
+        return None
+    modes = {}
+    for table in BARE_TABLES:
+        where = "job.objects.%s" % table
+        obj = job["objects"][table]
+        if not isinstance(obj, dict):
+            problems.append("%s: must be a mapping" % where)
+            continue
+        missing = [k for k in OBJECT_KEYS if k not in obj]
+        extra = sorted(k for k in obj if k not in OBJECT_KEYS + OPTIONAL_OBJECT_KEYS)
+        if missing:
+            problems.append("%s: missing %s" % (where, ", ".join(missing)))
+        if extra:
+            problems.append("%s: unexpected %s" % (where, ", ".join(extra)))
+        if obj.get("tableType") not in TABLE_TYPES:
+            problems.append("%s.tableType: must be one of %s, is %r"
+                            % (where, ", ".join(TABLE_TYPES), obj.get("tableType")))
+        if obj.get("historyMode") not in HISTORY_MODES:
+            problems.append("%s.historyMode: must be one of %s, is %r"
+                            % (where, ", ".join(HISTORY_MODES), obj.get("historyMode")))
+        else:
+            modes[table] = obj["historyMode"]
+        if "eventTimeCol" in obj and (not isinstance(obj["eventTimeCol"], str)
+                                      or not KEY.match(obj["eventTimeCol"])):
+            problems.append("%s.eventTimeCol: must be a column name, is %r" % (where, obj["eventTimeCol"]))
+    return modes if len(modes) == len(BARE_TABLES) else None
+
+
+def check_runs(problems, runs, history_mode):
     complete = []
     for run in RUNS:
         if not check_keys(problems, "runs.%s" % run, runs[run], LAYERS):
@@ -327,13 +368,14 @@ def check_runs(problems, runs):
             source = layers["source"][source_name]
             history = layers["history"][table]
             mismatch("staging", table, source, "a full load stages the source")
-            if HISTORY_MODE[table] == "scd2":
+            mismatch("bridge_hst", table, history, "is the whole history table")
+            # The bridge_act rule follows the job block's history mode; with no valid mode
+            # there, check_job has reported it and the rule is skipped.
+            if history_mode is not None and history_mode[table] == "scd2":
                 mismatch("bridge_act", table, layers["staging"][table],
                          "scd2 keeps one open version per source row, as staging holds")
-                mismatch("bridge_hst", table, history, "is the whole history table")
-            else:
+            elif history_mode is not None:
                 mismatch("bridge_act", table, history, "append closes nothing, so it is all of history")
-                mismatch("bridge_hst", table, history, "is the whole history table")
             if run == "run1":
                 for layer in LAYERS[1:]:
                     mismatch(layer, table, source, "run 1 starts from empty layers, so it equals the source")
@@ -396,14 +438,15 @@ def check_reveal(problems, reveal):
 def validate(data):
     """Every problem with the parsed file, as a list of messages; empty when it is valid."""
     problems = []
-    if not check_keys(problems, "top level", data, ("schema", "dataset", "runs", "reveal")):
+    if not check_keys(problems, "top level", data, ("schema", "dataset", "job", "runs", "reveal")):
         return problems
     if not is_count(data["schema"]) or data["schema"] != 1:
         problems.append("schema: must be 1, is %r" % (data["schema"],))
     if data["dataset"] != "jaffle":
         problems.append("dataset: must be jaffle, is %r" % (data["dataset"],))
+    history_mode = check_job(problems, data["job"])
     if check_keys(problems, "runs", data["runs"], RUNS):
-        check_runs(problems, data["runs"])
+        check_runs(problems, data["runs"], history_mode)
     check_reveal(problems, data["reveal"])
     return problems
 

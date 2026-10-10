@@ -14,7 +14,10 @@
 # source schemas, so the bare names do not collide.
 #
 # History modes: customers, products, stores and supplies are SCD2; orders, order_items
-# and tweets are append, with event times ordered_at and tweeted_at.
+# and tweets are append, with event times ordered_at and tweeted_at. The job block below
+# states them, with each table's type, for the job that produced these counts; CI checks
+# that jaffle/project/amfelt.yaml's job holds exactly these values, and counts.py derives
+# each layer rule from the stated history mode.
 #
 # The rule per layer, with B the run-1 rows, and I, U and D the rows run 2 inserts,
 # updates and deletes:
@@ -42,6 +45,20 @@
 # db/run2.sql names every inserted, updated and deleted row and says why.
 schema: 1
 dataset: jaffle
+# The job these counts expect: its layer, its schema prefix, and per object the table type,
+# the history mode and the event-time column, as jaffle/project/amfelt.yaml's select.objects
+# names them.
+job:
+  layer: bridge
+  schemaPrefix: jaffle
+  objects:
+    customers:    { tableType: master,      historyMode: scd2 }
+    products:     { tableType: reference,   historyMode: scd2 }
+    stores:       { tableType: reference,   historyMode: scd2 }
+    supplies:     { tableType: reference,   historyMode: scd2 }
+    orders:       { tableType: transaction, historyMode: append, eventTimeCol: ordered_at }
+    order_items:  { tableType: transaction, historyMode: append }
+    tweets:       { tableType: transaction, historyMode: append, eventTimeCol: tweeted_at }
 runs:
   run1:
     source:      { sales.customers: 232, sales.stores: 6, sales.orders: 6837, sales.order_items: 10025, catalog.products: 10, catalog.supplies: 65, marketing.tweets: 2161 }
