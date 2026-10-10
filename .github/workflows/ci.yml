@@ -8,6 +8,13 @@ on:
   merge_group:
   push:
     branches: [main]
+  # release-jaffle.yml runs these same jobs on the tag before it publishes anything.
+  workflow_call:
+    inputs:
+      ref:
+        description: The ref to check out; empty checks out the triggering ref
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -22,6 +29,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: pnpm/action-setup@v6
         with:
@@ -44,6 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
@@ -75,6 +85,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: actions/setup-python@v6
         with:
@@ -96,6 +108,26 @@ jobs:
           JAFFLE_REQUIRE_MINORS: "1"
         run: sh jaffle/derive/reproduce.sh "$RUNNER_TEMP/jaffle-fullyear-jafgen-0.4.14.tar.gz"
 
+  # The release asset must rebuild to the same bytes whatever the directory, timezone, umask
+  # and file mtimes, and the tag check must reject a version that is not jaffle/VERSION.
+  # test-reproducible.sh needs GNU tar, which this runner has.
+  asset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Build the asset twice and compare
+        run: sh jaffle/release/test-reproducible.sh
+
+      - name: Build the asset and verify its checksum file
+        run: |
+          sh jaffle/release/build-asset.sh "jaffle/v$(head -n 1 jaffle/VERSION)" "$RUNNER_TEMP/asset"
+          cd "$RUNNER_TEMP/asset"
+          sha256sum -c ./*.sha256
+
   # The address file must be byte-identical under two Python minor versions and two hash
   # seeds. The test fails unless both versions really ran (JAFFLE_REQUIRE_MINORS).
   addresses:
@@ -103,6 +135,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: actions/setup-python@v6
         with:
@@ -146,6 +180,8 @@ jobs:
           --health-retries 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Check that client and server share the pinned image
         env:

@@ -1,0 +1,124 @@
+name: release-jaffle
+
+# Publishes the Jaffle corpus as a release of this repository. Push a tag jaffle/vX.Y.Z (or
+# jaffle/vX.Y.Z-rc.N) after jaffle/VERSION holds X.Y.Z on main; the procedure is in
+# jaffle/release/README.md. The workflow never creates the tag. workflow_dispatch re-runs a
+# tag that already exists, for example after a runner failure before the release was made.
+on:
+  push:
+    tags: ["jaffle/v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: An existing tag, for example jaffle/v1.0.0-rc.1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  # One place for the tag; the steps read it from the environment, never from an inline
+  # expression, so the tag's text cannot become shell.
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  # Cheap, and first: a tag that does not match jaffle/VERSION stops here, before CI runs.
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      kind: ${{ steps.check.outputs.kind }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ github.event.inputs.tag || github.ref_name }}
+          fetch-depth: 0
+
+      # A tag on a commit that never reached main would publish unreviewed data.
+      - name: Check that the tag's commit is on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor HEAD FETCH_HEAD; then
+            echo "::error::$TAG points at a commit that is not on main"
+            exit 1
+          fi
+
+      - name: Check the tag against jaffle/VERSION
+        id: check
+        run: |
+          kind=$(sh jaffle/release/check-tag.sh "$TAG")
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "ok: $TAG is a $kind of $(head -n 1 jaffle/VERSION)"
+
+  # The same jobs the pull request required: lint, commitlint, reproduce, addresses, load
+  # and asset. A tag on a broken tree cannot publish.
+  ci:
+    needs: tag
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: refs/tags/${{ github.event.inputs.tag || github.ref_name }}
+
+  release:
+    needs: [tag, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ github.event.inputs.tag || github.ref_name }}
+
+      - name: Build the asset
+        run: sh jaffle/release/build-asset.sh "$TAG" "$RUNNER_TEMP/asset"
+
+      - name: Write the release notes
+        env:
+          KIND: ${{ needs.tag.outputs.kind }}
+        run: |
+          version=${TAG#jaffle/v}
+          sha=$(cut -d' ' -f1 "$RUNNER_TEMP/asset/jaffle-v$version.tar.gz.sha256")
+          {
+            echo "Jaffle corpus \`$TAG\`."
+            echo
+            echo "- Asset: \`jaffle-v$version.tar.gz\`"
+            echo "- SHA-256: \`$sha\`"
+            echo "- Provenance: https://github.com/$GITHUB_REPOSITORY/blob/$TAG/jaffle/PROVENANCE"
+            echo
+            echo "Pin the tag and this SHA-256 in a consumer, and verify \`jaffle/SHA256SUMS\`"
+            echo "inside the archive. The archive is byte-reproducible from this tag with"
+            echo "\`jaffle/release/build-asset.sh\`."
+            if [ "$KIND" = prerelease ]; then
+              echo
+              echo "This is a release candidate: consumers validate against it, and the final"
+              echo "tag follows once they agree."
+            fi
+          } > "$RUNNER_TEMP/notes.md"
+
+      # --latest=false on purpose: this repository will hold other corpora, each tagged on
+      # its own (spec D7), so no single corpus's release may claim "latest" for the
+      # repository. Consumers pin an explicit tag; nothing resolves "latest". --verify-tag
+      # makes gh fail rather than create a tag of its own.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KIND: ${{ needs.tag.outputs.kind }}
+        run: |
+          version=${TAG#jaffle/v}
+          prerelease=
+          if [ "$KIND" = prerelease ]; then prerelease=--prerelease; fi
+          # shellcheck disable=SC2086 # prerelease is empty or one flag
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "$TAG" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --latest=false \
+            $prerelease \
+            "$RUNNER_TEMP/asset/jaffle-v$version.tar.gz" \
+            "$RUNNER_TEMP/asset/jaffle-v$version.tar.gz.sha256"
