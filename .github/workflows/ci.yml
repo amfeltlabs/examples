@@ -119,9 +119,12 @@ jobs:
 
   # Loads the published corpus into a fresh PostgreSQL with jaffle/db/load.sql, then checks
   # the model with jaffle/db/check_load.sql: schemas, tables, a comment on every object, the
-  # keys, and row counts counted from the files. The server is the stack's bundled database
-  # (stack versions.yaml, backing.database.bundled), pinned by digest; psql runs from the
-  # same image, on the service's network, so the client is the one the seeds use.
+  # keys, and row counts counted from the files. It then compares the source with run 1's
+  # expected counts in jaffle/expected/counts.yaml, applies jaffle/db/run2.sql, checks its
+  # orders and stores, and compares the source with run 2's. The server is the stack's
+  # bundled database (stack versions.yaml, backing.database.bundled), pinned by digest; psql
+  # runs from the same image, on the service's network, so the client is the one the seeds
+  # use.
   load:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -179,3 +182,68 @@ jobs:
             -v "$GITHUB_WORKSPACE/jaffle:/jaffle:ro" \
             "$POSTGRES_IMAGE" \
             psql -X -v ON_ERROR_STOP=1 -v datadir=/jaffle/data -f /jaffle/db/check_load.sql
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # The structure of the expected results: every run, every layer, all seven tables, an
+      # integer each, and the reveal. counts.py is standard library only.
+      - name: Validate the expected counts
+        run: python3 jaffle/expected/counts.py validate
+
+      # The source half of counts.yaml is a fact this job can check; the warehouse layers are
+      # derived, and the stack's engine-capture scenario checks them against an engine run.
+      # The reveal's customer must hold the before address now and the after address once
+      # run 2 is applied.
+      - name: Compare the source with run 1's expected counts
+        env:
+          SERVICE_NETWORK: ${{ job.services.postgres.network }}
+        run: |
+          mover=$(python3 jaffle/expected/counts.py get reveal.customer_id)
+          python3 jaffle/expected/counts.py expect run1 > "$RUNNER_TEMP/run1.expected"
+          docker run --rm --network "$SERVICE_NETWORK" \
+            -e PGHOST=postgres -e PGUSER=jaffle -e PGPASSWORD=jaffle -e PGDATABASE=jaffle \
+            -v "$GITHUB_WORKSPACE/jaffle:/jaffle:ro" \
+            "$POSTGRES_IMAGE" \
+            psql -X -v ON_ERROR_STOP=1 -v mover="$mover" -f /jaffle/db/source_counts.sql \
+            > "$RUNNER_TEMP/run1.actual"
+          diff -u "$RUNNER_TEMP/run1.expected" "$RUNNER_TEMP/run1.actual"
+          echo "ok: the source matches runs.run1.source and the reveal's before address"
+
+      # run2.sql opens and commits its own transaction.
+      - name: Apply run 2
+        env:
+          SERVICE_NETWORK: ${{ job.services.postgres.network }}
+        run: |
+          docker run --rm --network "$SERVICE_NETWORK" \
+            -e PGHOST=postgres -e PGUSER=jaffle -e PGPASSWORD=jaffle -e PGDATABASE=jaffle \
+            -v "$GITHUB_WORKSPACE/jaffle:/jaffle:ro" \
+            "$POSTGRES_IMAGE" \
+            psql -X -v ON_ERROR_STOP=1 -f /jaffle/db/run2.sql
+
+      - name: Check run 2's orders and stores
+        env:
+          SERVICE_NETWORK: ${{ job.services.postgres.network }}
+        run: |
+          mover=$(python3 jaffle/expected/counts.py get reveal.customer_id)
+          docker run --rm --network "$SERVICE_NETWORK" \
+            -e PGHOST=postgres -e PGUSER=jaffle -e PGPASSWORD=jaffle -e PGDATABASE=jaffle \
+            -v "$GITHUB_WORKSPACE/jaffle:/jaffle:ro" \
+            "$POSTGRES_IMAGE" \
+            psql -X -v ON_ERROR_STOP=1 -v mover="$mover" -f /jaffle/db/check_run2.sql
+
+      - name: Compare the source with run 2's expected counts
+        env:
+          SERVICE_NETWORK: ${{ job.services.postgres.network }}
+        run: |
+          mover=$(python3 jaffle/expected/counts.py get reveal.customer_id)
+          python3 jaffle/expected/counts.py expect run2 > "$RUNNER_TEMP/run2.expected"
+          docker run --rm --network "$SERVICE_NETWORK" \
+            -e PGHOST=postgres -e PGUSER=jaffle -e PGPASSWORD=jaffle -e PGDATABASE=jaffle \
+            -v "$GITHUB_WORKSPACE/jaffle:/jaffle:ro" \
+            "$POSTGRES_IMAGE" \
+            psql -X -v ON_ERROR_STOP=1 -v mover="$mover" -f /jaffle/db/source_counts.sql \
+            > "$RUNNER_TEMP/run2.actual"
+          diff -u "$RUNNER_TEMP/run2.expected" "$RUNNER_TEMP/run2.actual"
+          echo "ok: the source matches runs.run2.source and the reveal's after address"
