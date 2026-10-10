@@ -33,8 +33,10 @@ source_url() {
     password=$(docker compose config --format json | python3 -c '
 import json, sys, urllib.parse
 config = json.load(sys.stdin)
-print(urllib.parse.quote(config["services"]["source"]["environment"]["POSTGRES_PASSWORD"], safe=""))') || return 1
-    [ -n "$password" ] || return 1
+print(urllib.parse.quote(config["services"]["source"]["environment"]["POSTGRES_PASSWORD"], safe=""))' 2>/dev/null) && [ -n "$password" ] || {
+        echo "error: cannot read the database password through docker compose config" >&2
+        return 1
+    }
     printf 'postgres://jaffle:%s@source:5432/jaffle?sslmode=disable\n' "$password"
 }
 

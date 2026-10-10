@@ -22,11 +22,14 @@ this one covers what the counts depend on.
 
 The project file is read with PyYAML when it is installed, as in CI. Without it, a small
 standard-library reader takes over, for readers of the tutorial whose python3 has no
-PyYAML: it reads the block-style subset the agent writes (mappings, sequences, plain and
-quoted scalars) and refuses anything else. CHECK_PROJECT_YAML=builtin forces it.
+PyYAML. It accepts a strict subset of block-style YAML, the subset the agent writes, and
+returns for it exactly what yaml.safe_load returns; it refuses every input outside the
+subset with an error. builtin_load below lists the subset. CHECK_PROJECT_YAML=builtin
+forces it.
 counts.yaml is read with counts.py's own parser.
 """
 
+import datetime
 import importlib.util
 import os
 import re
@@ -95,48 +98,138 @@ class ProjectYamlError(Exception):
     pass
 
 
-PLAIN_KEY = re.compile(r'([A-Za-z_][A-Za-z0-9_.-]*):(?: (.*))?\Z')
+# The built-in reader. It accepts a strict subset of block-style YAML and returns for it
+# exactly what yaml.safe_load returns; anything outside the subset raises ProjectYamlError.
+#
+#   - The text is printable ASCII and newlines: no tab, carriage return, byte-order mark,
+#     control character or non-ASCII character.
+#   - No document markers, flow collections, anchors, aliases, tags, block scalars or
+#     multi-line scalars.
+#   - Each line, after its indentation, is a comment ("# ..."), "key:", "key: value",
+#     "- value" or "- key: ..." with exactly one space after the dash. Keys are plain
+#     words, unique within their mapping, that YAML reads as strings.
+#   - A value is a double-quoted string with no backslash or quote inside, a single-quoted
+#     string with no quote inside, or a plain scalar that does not start with an indicator,
+#     ends in no colon, and holds no ": " and no " #".
+#
+# A plain scalar is typed by PyYAML's own implicit resolvers (YAML 1.1), copied below from
+# PyYAML 6.0's resolver.py: a bool, a null, a decimal integer without sign or underscores,
+# or a timestamp is built as PyYAML's constructor builds it (timestamp_regexp and
+# construct_yaml_timestamp, copied from constructor.py); every other int, every float,
+# and the merge and value keys are refused. A scalar that matches no resolver is a string.
+RESOLVE_BOOL = re.compile(r'''^(?:yes|Yes|YES|no|No|NO
+                    |true|True|TRUE|false|False|FALSE
+                    |on|On|ON|off|Off|OFF)$''', re.X)
+RESOLVE_FLOAT = re.compile(r'''^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?
+                    |\.[0-9][0-9_]*(?:[eE][-+][0-9]+)?
+                    |[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*
+                    |[-+]?\.(?:inf|Inf|INF)
+                    |\.(?:nan|NaN|NAN))$''', re.X)
+RESOLVE_INT = re.compile(r'''^(?:[-+]?0b[0-1_]+
+                    |[-+]?0[0-7_]+
+                    |[-+]?(?:0|[1-9][0-9_]*)
+                    |[-+]?0x[0-9a-fA-F_]+
+                    |[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+)$''', re.X)
+RESOLVE_MERGE = re.compile(r'^(?:<<)$')
+RESOLVE_NULL = re.compile(r'''^(?: ~
+                    |null|Null|NULL
+                    | )$''', re.X)
+RESOLVE_TIMESTAMP = re.compile(r'''^(?:[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]
+                    |[0-9][0-9][0-9][0-9] -[0-9][0-9]? -[0-9][0-9]?
+                     (?:[Tt]|[ \t]+)[0-9][0-9]?
+                     :[0-9][0-9] :[0-9][0-9] (?:\.[0-9]*)?
+                     (?:[ \t]*(?:Z|[-+][0-9][0-9]?(?::[0-9][0-9])?))?)$''', re.X)
+RESOLVE_VALUE = re.compile(r'^(?:=)$')
+TIMESTAMP_PARTS = re.compile(
+    r'''^(?P<year>[0-9][0-9][0-9][0-9])
+        -(?P<month>[0-9][0-9]?)
+        -(?P<day>[0-9][0-9]?)
+        (?:(?:[Tt]|[ \t]+)
+        (?P<hour>[0-9][0-9]?)
+        :(?P<minute>[0-9][0-9])
+        :(?P<second>[0-9][0-9])
+        (?:\.(?P<fraction>[0-9]*))?
+        (?:[ \t]*(?P<tz>Z|(?P<tz_sign>[-+])(?P<tz_hour>[0-9][0-9]?)
+        (?::(?P<tz_minute>[0-9][0-9]))?))?)?$''', re.X)
+BOOL_VALUES = {"yes": True, "no": False, "true": True, "false": False, "on": True, "off": False}
+DECIMAL = re.compile(r"(0|[1-9][0-9]*)\Z")
+PLAIN_KEY = re.compile(r"([A-Za-z_][A-Za-z0-9_.-]*):(?: (.*))?\Z")
+PLAIN_FIRST_REFUSED = "-?:,[]{}#&*!|>'\"%@`<="
+
+
+def build_timestamp(text, where):
+    """PyYAML's construct_yaml_timestamp, refusing what it would fail on."""
+    values = TIMESTAMP_PARTS.match(text).groupdict()
+    try:
+        year, month, day = int(values["year"]), int(values["month"]), int(values["day"])
+        if not values["hour"]:
+            return datetime.date(year, month, day)
+        hour, minute, second = int(values["hour"]), int(values["minute"]), int(values["second"])
+        fraction = 0
+        tzinfo = None
+        if values["fraction"]:
+            fraction = values["fraction"][:6]
+            while len(fraction) < 6:
+                fraction += "0"
+            fraction = int(fraction)
+        if values["tz_sign"]:
+            delta = datetime.timedelta(hours=int(values["tz_hour"]), minutes=int(values["tz_minute"] or 0))
+            if values["tz_sign"] == "-":
+                delta = -delta
+            tzinfo = datetime.timezone(delta)
+        elif values["tz"]:
+            tzinfo = datetime.timezone.utc
+        return datetime.datetime(year, month, day, hour, minute, second, fraction, tzinfo=tzinfo)
+    except ValueError as err:
+        raise ProjectYamlError("%s: %r is not a valid timestamp: %s" % (where, text, err))
+
+
+def resolve_plain(text, where):
+    """The value PyYAML gives a plain scalar, or a refusal."""
+    if RESOLVE_BOOL.match(text):
+        return BOOL_VALUES[text.lower()]
+    if RESOLVE_NULL.match(text):
+        return None
+    if RESOLVE_TIMESTAMP.match(text):
+        return build_timestamp(text, where)
+    if RESOLVE_INT.match(text):
+        if DECIMAL.match(text):
+            return int(text)
+        raise ProjectYamlError("%s: %r is a YAML 1.1 integer form this reader refuses" % (where, text))
+    if RESOLVE_FLOAT.match(text) or RESOLVE_MERGE.match(text) or RESOLVE_VALUE.match(text):
+        raise ProjectYamlError("%s: %r is typed as a float or a special key by YAML; quote it" % (where, text))
+    return text
 
 
 def builtin_scalar(text, where):
     if text.startswith('"'):
-        if len(text) < 2 or not text.endswith('"') or '\\' in text or '"' in text[1:-1]:
-            raise ProjectYamlError("%s: unsupported string %s" % (where, text))
+        if len(text) < 2 or not text.endswith('"') or "\\" in text or '"' in text[1:-1]:
+            raise ProjectYamlError("%s: unsupported double-quoted string %s" % (where, text))
         return text[1:-1]
     if text.startswith("'"):
         if len(text) < 2 or not text.endswith("'") or "'" in text[1:-1]:
-            raise ProjectYamlError("%s: unsupported string %s" % (where, text))
+            raise ProjectYamlError("%s: unsupported single-quoted string %s" % (where, text))
         return text[1:-1]
-    if text[:1] in "[]{}&*!|>%@`#" or " #" in text or ": " in text:
+    if text[0] in PLAIN_FIRST_REFUSED or text.endswith(":") or ": " in text or " #" in text:
         raise ProjectYamlError("%s: unsupported value %r" % (where, text))
-    if re.match(r"-?(0|[1-9][0-9]*)\Z", text):
-        return int(text)
-    if text in ("true", "false"):
-        return text == "true"
-    if text in ("null", "~"):
-        return None
-    # Plain words PyYAML would type as a float, a boolean or a date are refused rather than
-    # read differently.
-    if re.match(r"[-+]?([0-9]*\.[0-9]+|[0-9]+\.)([eE][-+]?[0-9]+)?\Z", text) \
-            or text.lower() in ("yes", "no", "on", "off", "y", "n", "true", "false", "null") \
-            or re.match(r"[0-9]{4}-[0-9]{2}-[0-9]{2}\Z", text):
-        raise ProjectYamlError("%s: %r is typed differently by YAML readers; quote it" % (where, text))
-    return text
+    return resolve_plain(text, where)
 
 
 def builtin_load(text, name):
-    """The block-style YAML the agent writes, as nested dicts and lists."""
+    """The block-style YAML the agent writes, as yaml.safe_load would return it."""
     lines = []
     for number, raw in enumerate(text.split("\n"), 1):
+        where = "%s:%d" % (name, number)
+        bad = [c for c in raw if not " " <= c <= "~"]
+        if bad:
+            raise ProjectYamlError("%s: character %r is not printable ASCII" % (where, bad[0]))
         stripped = raw.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        if stripped in ("---", "..."):
-            raise ProjectYamlError("%s:%d: document markers are not supported" % (name, number))
+        if stripped.startswith("---") or stripped.startswith("..."):
+            raise ProjectYamlError("%s: document markers are not supported" % where)
         indent = len(raw) - len(raw.lstrip(" "))
-        if raw[indent:indent + 1] == "\t":
-            raise ProjectYamlError("%s:%d: tabs are not allowed" % (name, number))
-        lines.append(["%s:%d" % (name, number), indent, raw.rstrip()[indent:]])
+        lines.append([where, indent, raw.rstrip()[indent:]])
     pos = [0]
 
     def is_item(line):
@@ -153,6 +246,8 @@ def builtin_load(text, name):
             if not m:
                 raise ProjectYamlError("%s: expected 'key: value', got %r" % (where, content))
             key, rest = m.group(1), (m.group(2) or "").strip()
+            if not isinstance(resolve_plain(key, where), str):
+                raise ProjectYamlError("%s: key %r is not read as a string by YAML" % (where, key))
             if key in out:
                 raise ProjectYamlError("%s: duplicate key %r" % (where, key))
             pos[0] += 1
@@ -169,9 +264,9 @@ def builtin_load(text, name):
         out = []
         while pos[0] < len(lines) and lines[pos[0]][1] == indent and is_item(lines[pos[0]]):
             where, _, content = lines[pos[0]]
-            rest = content[1:].strip()
-            if not rest:
-                raise ProjectYamlError("%s: an empty sequence item is not supported" % where)
+            rest = content[2:]
+            if not rest or rest[0] == " ":
+                raise ProjectYamlError("%s: a sequence item needs exactly one space after the dash" % where)
             if PLAIN_KEY.match(rest):
                 # "- key: value" opens a mapping whose keys sit two columns in.
                 lines[pos[0]] = [where, indent + 2, rest]
