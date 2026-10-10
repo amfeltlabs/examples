@@ -116,3 +116,66 @@ jobs:
           JAFFLE_REQUIRE_MINORS: "2"
         run: python3.12 -m unittest test_addresses
         working-directory: jaffle/derive
+
+  # Loads the published corpus into a fresh PostgreSQL with jaffle/db/load.sql, then checks
+  # the model with jaffle/db/check_load.sql: schemas, tables, a comment on every object, the
+  # keys, and row counts counted from the files. The server is the stack's bundled database
+  # (stack versions.yaml, backing.database.bundled), pinned by digest; psql runs from the
+  # same image, on the service's network, so the client is the one the seeds use.
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # A service's image cannot read the env context, so the reference is written twice; the
+    # first step fails unless the service runs exactly this one.
+    env:
+      POSTGRES_IMAGE: docker.io/library/postgres:17.11-alpine@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
+    services:
+      postgres:
+        image: docker.io/library/postgres:17.11-alpine@sha256:f02121de6f74d30d8a94cd1d9584125e2178d7e6c377d8130112d4e52d867995
+        env:
+          POSTGRES_USER: jaffle
+          POSTGRES_PASSWORD: jaffle
+          POSTGRES_DB: jaffle
+        options: >-
+          --health-cmd "pg_isready -U jaffle -d jaffle"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check that client and server share the pinned image
+        env:
+          SERVICE_ID: ${{ job.services.postgres.id }}
+        # Compared by image id, not by name, so the check does not depend on how the runner
+        # spells the reference it was given.
+        run: |
+          docker pull --quiet "$POSTGRES_IMAGE"
+          server=$(docker inspect --format '{{.Image}}' "$SERVICE_ID")
+          client=$(docker image inspect --format '{{.Id}}' "$POSTGRES_IMAGE")
+          if [ "$server" != "$client" ]; then
+            echo "::error::the postgres service runs image $server, POSTGRES_IMAGE is $client"
+            exit 1
+          fi
+          echo "ok: service and client both run $client"
+
+      - name: Load the corpus in one transaction
+        env:
+          SERVICE_NETWORK: ${{ job.services.postgres.network }}
+        run: |
+          docker run --rm --network "$SERVICE_NETWORK" \
+            -e PGHOST=postgres -e PGUSER=jaffle -e PGPASSWORD=jaffle -e PGDATABASE=jaffle \
+            -v "$GITHUB_WORKSPACE/jaffle:/jaffle:ro" \
+            "$POSTGRES_IMAGE" \
+            psql -X -v ON_ERROR_STOP=1 --single-transaction -v datadir=/jaffle/data \
+              -f /jaffle/db/load.sql
+
+      - name: Check the loaded model
+        env:
+          SERVICE_NETWORK: ${{ job.services.postgres.network }}
+        run: |
+          docker run --rm --network "$SERVICE_NETWORK" \
+            -e PGHOST=postgres -e PGUSER=jaffle -e PGPASSWORD=jaffle -e PGDATABASE=jaffle \
+            -v "$GITHUB_WORKSPACE/jaffle:/jaffle:ro" \
+            "$POSTGRES_IMAGE" \
+            psql -X -v ON_ERROR_STOP=1 -v datadir=/jaffle/data -f /jaffle/db/check_load.sql
