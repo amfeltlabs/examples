@@ -14,8 +14,10 @@
 #   2. derive/trim.py turns the full-year files into the trimmed corpus;
 #   3. the trimmed corpus matches derive/trim.SHA256SUMS;
 #   4. derive/shift.py's unit tests pass on it, and its published files match the committed
-#      jaffle/data/ and jaffle/SHA256SUMS.
-# Later steps (addresses, pinned data) append below the marked line.
+#      jaffle/data/ and jaffle/SHA256SUMS;
+#   5. derive/addresses.py, run on the committed customers.csv, writes exactly the committed
+#      customer_addresses.csv, and the whole of jaffle/data/ matches jaffle/SHA256SUMS.
+# Later steps append below the marked line.
 set -eu
 
 # The SHA-256 of the archive, as recorded in PROVENANCE.
@@ -79,7 +81,8 @@ check_script() {
 }
 check_script trim.py TRIM_SHA256
 check_script shift.py SHIFT_SHA256
-printf 'ok: PROVENANCE records the digests of trim.py and shift.py\n'
+check_script addresses.py ADDRESSES_SHA256
+printf 'ok: PROVENANCE records the digests of trim.py, shift.py and addresses.py\n'
 
 # 3. Compare the trimmed corpus with its pinned digests.
 check_sums "$work/trim" "$here/trim.SHA256SUMS" trim
@@ -89,17 +92,31 @@ printf 'ok: trim output matches trim.SHA256SUMS\n'
 # on the same trim output. The published files must match the committed jaffle/data/ and
 # its SHA256SUMS exactly.
 JAFFLE_TRIM_DIR="$work/trim" python3 -m unittest discover -s "$here" -t "$here" \
-    || fail "shift.py unit tests failed"
+    || fail "unit tests failed"
+# SHA256SUMS also pins the addresses, which shift.py does not write; step 5 checks those.
 python3 "$here/shift.py" "$work/trim" "$work/data"
-check_sums "$work/data" "$here/../SHA256SUMS" shift
+grep -v '  customer_addresses.csv$' "$here/../SHA256SUMS" >"$work/shift.sums" || true
+grep '  customer_addresses.csv$' "$here/../SHA256SUMS" >"$work/addresses.sums" || true
+check_sums "$work/data" "$work/shift.sums" shift
 (cd "$work/data" && for f in *; do cmp -s "$f" "$here/../data/$f" || exit 1; done) \
     || fail "shift output differs from the committed jaffle/data/"
-(cd "$here/../data" && find . -type f | sort) >"$work/data.committed"
+(cd "$here/../data" && find . -type f | grep -v '^\./customer_addresses\.csv$' | sort) >"$work/data.committed"
 (cd "$work/data" && find . -type f | sort) >"$work/data.shifted"
 cmp -s "$work/data.committed" "$work/data.shifted" \
     || fail "jaffle/data/ holds files the shift did not write"
 printf 'ok: shift output matches jaffle/SHA256SUMS and jaffle/data/\n'
 
-# --- later items append their steps here (addresses.py, data/ SHA256SUMS) ---
+# 5. Addresses. addresses.py checks the committed customers.csv against SHA256SUMS itself,
+# and its unit tests ran with the discovery above. Its output must equal the committed
+# customer_addresses.csv exactly, and the whole of jaffle/data/ must match SHA256SUMS.
+python3 "$here/addresses.py" "$here/../data" "$work/addresses" >/dev/null \
+    || fail "addresses.py failed"
+check_sums "$work/addresses" "$work/addresses.sums" addresses
+cmp -s "$work/addresses/customer_addresses.csv" "$here/../data/customer_addresses.csv" \
+    || fail "addresses output differs from the committed jaffle/data/customer_addresses.csv"
+check_sums "$here/../data" "$here/../SHA256SUMS" published
+printf 'ok: addresses output matches jaffle/SHA256SUMS and jaffle/data/\n'
+
+# --- later items append their steps here ---
 
 printf 'reproduce.sh: all checks passed\n'
