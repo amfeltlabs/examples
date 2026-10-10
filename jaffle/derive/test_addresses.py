@@ -105,8 +105,18 @@ class Determinism(unittest.TestCase):
             for seed in (1, 4242):
                 digests[(python, seed)] = self.run_script(python, seed)
         self.assertEqual(len(set(digests.values())), 1, digests)
-        need = int(os.environ.get("JAFFLE_REQUIRE_MINORS", "1"))
+        required = os.environ.get("JAFFLE_REQUIRE_MINORS")
+        if required is None and os.environ.get("CI"):
+            self.fail("JAFFLE_REQUIRE_MINORS must be set in CI so one Python version cannot pass")
+        need = int(required or "1")
         self.assertGreaterEqual(len(minors), need, "exercised Python versions: %s" % sorted(minors))
+
+
+class Pinned(Case):
+    def test_output_equals_the_committed_file(self):
+        with open(os.path.join(self.out, addresses.OUTPUT), "rb") as a, \
+                open(os.path.join(DATA, addresses.OUTPUT), "rb") as b:
+            self.assertEqual(a.read(), b.read())
 
 
 class Distribution(Case):

@@ -43,11 +43,9 @@ STREETS = (
     "Baltimore Ave", "Broad St", "Bainbridge St",
 )
 
-# Philadelphia ZIP codes in 19102-19154. Established on 2026-10-10 by querying every code
-# in that range against the GeoNames-based api.zippopotam.us: all 53 resolve to
-# Philadelphia, PA. Four are left out because they are not residential delivery codes I
-# can vouch for (19105, 19108 and 19110 are PO-box or single-organization codes; 19117 is
-# a boundary code that serves Montgomery County addresses), leaving 49.
+# 49 of the 53 codes in 19102-19154. Established on 2026-10-10 by querying every code in
+# that range against the GeoNames-based api.zippopotam.us: all 53 resolve to Philadelphia,
+# PA. 19105, 19108, 19110 and 19117 are omitted by editorial choice.
 ZIP_CODES = (
     "19102", "19103", "19104", "19106", "19107", "19109", "19111", "19112", "19113",
     "19114", "19115", "19116", "19118", "19119", "19120", "19121", "19122", "19123",

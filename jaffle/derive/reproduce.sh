@@ -92,7 +92,7 @@ printf 'ok: trim output matches trim.SHA256SUMS\n'
 # on the same trim output. The published files must match the committed jaffle/data/ and
 # its SHA256SUMS exactly.
 JAFFLE_TRIM_DIR="$work/trim" python3 -m unittest discover -s "$here" -t "$here" \
-    || fail "shift.py unit tests failed"
+    || fail "unit tests failed"
 # SHA256SUMS also pins the addresses, which shift.py does not write; step 5 checks those.
 python3 "$here/shift.py" "$work/trim" "$work/data"
 grep -v '  customer_addresses.csv$' "$here/../SHA256SUMS" >"$work/shift.sums" || true
