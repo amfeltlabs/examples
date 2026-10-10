@@ -106,9 +106,9 @@
 #                           (this step; checked by derive/reproduce.sh)
 #   3. derive/shift.py      moves every timestamp forward by 2,555 days (365 weeks) and gives
 #                           the files their published names (this step; data/, SHA256SUMS)
-#   4. derive/addresses.py  adds a deterministic address per customer (later item)
-#   5. data/ + SHA256SUMS   the pinned outputs of the chain (data/ and SHA256SUMS exist for
-#                           step 3; step 4 will add to them)
+#   4. derive/addresses.py  adds a deterministic address per customer (this step; data/,
+#                           SHA256SUMS)
+#   5. data/ + SHA256SUMS   the pinned outputs of the chain (steps 3 and 4 write to them)
 #
 # Step 3 shifts stores.opened_at, orders.ordered_at and tweets.tweeted_at by exactly 2,555
 # days, as whole days on the zone-less timestamps. 2,555 is a whole number of weeks, so
@@ -121,8 +121,16 @@
 # trim.SHA256SUMS before it reads anything. SHA256SUMS in this directory pins every file in
 # data/, and derive/reproduce.sh requires the shift output to match both exactly.
 #
-# Steps 4 and 5 are not complete yet; until they land, the chain ends at data/ without
-# addresses.
+# Step 4 writes data/customer_addresses.csv (customer_id, street, postal_code, city,
+# country): one synthetic Philadelphia address per customer, in the order of customers.csv.
+# jafgen wrote none of it. Every choice is a SHA-256 over a named salt and the customer id,
+# so the file is the same on every run, Python version and PYTHONHASHSEED; the street and
+# ZIP lists are embedded in addresses.py. addresses.py checks customers.csv against
+# SHA256SUMS before reading it, and reproduce.sh requires its output to equal the committed
+# file. Its own SHA-256 is ADDRESSES_SHA256 below.
+#
+# Step 5 is complete when the pinned data lands; data/ and SHA256SUMS already cover steps 3
+# and 4.
 
 JAFGEN_VERSION=0.4.14
 JAFGEN_SOURCE=dbt-labs/jaffle-shop-generator
@@ -134,3 +142,4 @@ TRIM_SHA256=f7c658ff6ed90bdb6cd6d5d58bf0b93900265f43010f1b173deb0774a406a2ca
 TRIM_WINDOW='[2018-09-01T08:20:00, 2018-12-01T00:00:00)'
 SHIFT_SHA256=a1f19abaadb16784b1b2df814b2e07e0a02de74316ddd3cd4ab9ec37b1471a44
 SHIFT_DAYS=2555
+ADDRESSES_SHA256=82760e2da8ec249fa28228c278ffb07dfa3dbaa9e18c2c6983e0342141185305
