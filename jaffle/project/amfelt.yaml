@@ -37,6 +37,30 @@ jobs:
         historyMode: scd2
       include:
         - "*"
+      objects:
+        customers:
+          tableType: master
+          historyMode: scd2
+        products:
+          tableType: reference
+          historyMode: scd2
+        stores:
+          tableType: reference
+          historyMode: scd2
+        supplies:
+          tableType: reference
+          historyMode: scd2
+        orders:
+          tableType: transaction
+          historyMode: append
+          eventTimeCol: ordered_at
+        order_items:
+          tableType: transaction
+          historyMode: append
+        tweets:
+          tableType: transaction
+          historyMode: append
+          eventTimeCol: tweeted_at
     runs:
       - name: full
         strategy: full
