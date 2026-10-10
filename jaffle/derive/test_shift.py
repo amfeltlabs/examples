@@ -92,8 +92,18 @@ class Window(DataCase):
         self.assertEqual(sorted(os.listdir(self.out)), sorted(
             ["customers.csv", "stores.csv", "orders.csv", "order_items.csv", "products.csv",
              "supplies.csv", "tweets.csv"]))
-        self.assertIn("customer_id", read_rows(os.path.join(self.out, "orders.csv"))[0])
-        self.assertIn("customer_id", read_rows(os.path.join(self.out, "tweets.csv"))[0])
+        want = {
+            "customers.csv": ["id", "name"],
+            "order_items.csv": ["id", "order_id", "sku"],
+            "orders.csv": ["id", "customer_id", "ordered_at", "store_id", "subtotal", "tax_paid", "order_total"],
+            "products.csv": ["sku", "name", "type", "price", "description"],
+            "stores.csv": ["id", "name", "opened_at", "tax_rate"],
+            "supplies.csv": ["id", "name", "cost", "perishable", "sku"],
+            "tweets.csv": ["id", "customer_id", "tweeted_at", "content"],
+        }
+        for name, header in want.items():
+            with open(os.path.join(self.out, name), newline="", encoding="utf-8") as fh:
+                self.assertEqual(next(csv.reader(fh)), header, name)
 
 
 class Refusal(DataCase):

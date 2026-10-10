@@ -104,7 +104,7 @@
 #   1. archive              jaffle-fullyear-jafgen-0.4.14.tar.gz, the one generation run
 #   2. derive/trim.py       the first calendar quarter of orders and what they reference
 #                           (this step; checked by derive/reproduce.sh)
-#   3. derive/shift.py     moves every timestamp forward by 2,555 days (365 weeks) and gives
+#   3. derive/shift.py      moves every timestamp forward by 2,555 days (365 weeks) and gives
 #                           the files their published names (this step; data/, SHA256SUMS)
 #   4. derive/addresses.py  adds a deterministic address per customer (later item)
 #   5. data/ + SHA256SUMS   the pinned outputs of the chain (data/ and SHA256SUMS exist for

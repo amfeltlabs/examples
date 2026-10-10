@@ -70,6 +70,17 @@ check_sums() {
     (cd "$1" && sha256 -c "$2") || fail "$3 output differs from $2"
 }
 
+# The script digests PROVENANCE records must be the scripts' actual digests, so an edit
+# to a script cannot leave a stale record behind.
+check_script() {
+    want=$(sed -n "s/^$2=//p" "$here/../PROVENANCE")
+    got=$(sha256 "$here/$1" | cut -d ' ' -f 1)
+    [ "$want" = "$got" ] || fail "$1 sha256 is $got, PROVENANCE records ${want:-nothing} as $2"
+}
+check_script trim.py TRIM_SHA256
+check_script shift.py SHIFT_SHA256
+printf 'ok: PROVENANCE records the digests of trim.py and shift.py\n'
+
 # 3. Compare the trimmed corpus with its pinned digests.
 check_sums "$work/trim" "$here/trim.SHA256SUMS" trim
 printf 'ok: trim output matches trim.SHA256SUMS\n'
