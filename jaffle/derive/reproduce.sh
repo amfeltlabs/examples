@@ -12,8 +12,10 @@
 # Steps, each of which must pass before the next runs:
 #   1. the archive's SHA-256 matches ARCHIVE_SHA256, checked before anything is extracted;
 #   2. derive/trim.py turns the full-year files into the trimmed corpus;
-#   3. the trimmed corpus matches derive/trim.SHA256SUMS.
-# Later steps (shift, addresses, pinned data) append below the marked line.
+#   3. the trimmed corpus matches derive/trim.SHA256SUMS;
+#   4. derive/shift.py's unit tests pass on it, and its published files match the committed
+#      jaffle/data/ and jaffle/SHA256SUMS.
+# Later steps (addresses, pinned data) append below the marked line.
 set -eu
 
 # The SHA-256 of the archive, as recorded in PROVENANCE.
@@ -55,18 +57,38 @@ fullyear="$work/archive/jaffle-fullyear"
 # 2. Trim. trim.py checks every input file against the full-year digests itself.
 python3 "$here/trim.py" "$fullyear" "$work/trim"
 
-# 3. Compare the trimmed corpus with its pinned digests, exactly: every line of the sums
-# file is well-formed, the names it lists (duplicates kept) are the files trim wrote, and
+# Compare a directory with a sums file, exactly: every line of the sums file is
+# well-formed, the names it lists (duplicates kept) are the files the directory holds, and
 # every file matches its digest. sha256sum alone only warns about a malformed line.
-sums="$here/trim.SHA256SUMS"
-bad=$(grep -Evc '^[0-9a-f]{64}  [A-Za-z0-9_.-]+$' "$sums" || true)
-[ "$bad" = 0 ] || fail "trim.SHA256SUMS has $bad malformed line(s)"
-cut -c 67- "$sums" | sort >"$work/names.want"
-(cd "$work/trim" && find . -type f | sed 's#^\./##' | sort) >"$work/names.got"
-cmp -s "$work/names.want" "$work/names.got" || fail "files in trim.SHA256SUMS differ from the files trim wrote"
-(cd "$work/trim" && sha256 -c "$sums") || fail "trim output differs from trim.SHA256SUMS"
+# Usage: check_sums <dir> <sums file> <label>
+check_sums() {
+    bad=$(grep -Evc '^[0-9a-f]{64}  [A-Za-z0-9_.-]+$' "$2" || true)
+    [ "$bad" = 0 ] || fail "$3 sums file has $bad malformed line(s)"
+    cut -c 67- "$2" | sort >"$work/names.want"
+    (cd "$1" && find . -type f | sed 's#^\./##' | sort) >"$work/names.got"
+    cmp -s "$work/names.want" "$work/names.got" || fail "files in $2 differ from the files in the $3 output"
+    (cd "$1" && sha256 -c "$2") || fail "$3 output differs from $2"
+}
+
+# 3. Compare the trimmed corpus with its pinned digests.
+check_sums "$work/trim" "$here/trim.SHA256SUMS" trim
 printf 'ok: trim output matches trim.SHA256SUMS\n'
 
-# --- later items append their steps here (shift.py, addresses.py, data/ SHA256SUMS) ---
+# 4. Shift. shift.py checks the trim output against its digests itself. Its unit tests run
+# on the same trim output. The published files must match the committed jaffle/data/ and
+# its SHA256SUMS exactly.
+JAFFLE_TRIM_DIR="$work/trim" python3 -m unittest discover -s "$here" -t "$here" \
+    || fail "shift.py unit tests failed"
+python3 "$here/shift.py" "$work/trim" "$work/data"
+check_sums "$work/data" "$here/../SHA256SUMS" shift
+(cd "$work/data" && for f in *; do cmp -s "$f" "$here/../data/$f" || exit 1; done) \
+    || fail "shift output differs from the committed jaffle/data/"
+(cd "$here/../data" && find . -type f | sort) >"$work/data.committed"
+(cd "$work/data" && find . -type f | sort) >"$work/data.shifted"
+cmp -s "$work/data.committed" "$work/data.shifted" \
+    || fail "jaffle/data/ holds files the shift did not write"
+printf 'ok: shift output matches jaffle/SHA256SUMS and jaffle/data/\n'
+
+# --- later items append their steps here (addresses.py, data/ SHA256SUMS) ---
 
 printf 'reproduce.sh: all checks passed\n'

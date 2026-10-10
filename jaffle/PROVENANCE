@@ -104,12 +104,25 @@
 #   1. archive              jaffle-fullyear-jafgen-0.4.14.tar.gz, the one generation run
 #   2. derive/trim.py       the first calendar quarter of orders and what they reference
 #                           (this step; checked by derive/reproduce.sh)
-#   3. derive/shift.py      moves every timestamp forward by 2,555 days (later item)
+#   3. derive/shift.py     moves every timestamp forward by 2,555 days (365 weeks) and gives
+#                           the files their published names (this step; data/, SHA256SUMS)
 #   4. derive/addresses.py  adds a deterministic address per customer (later item)
-#   5. data/ + SHA256SUMS   the pinned outputs of the chain (later item)
+#   5. data/ + SHA256SUMS   the pinned outputs of the chain (data/ and SHA256SUMS exist for
+#                           step 3; step 4 will add to them)
 #
-# Steps 3 to 5 do not exist yet; until they land, only steps 1 and 2 are in this
-# repository.
+# Step 3 shifts stores.opened_at, orders.ordered_at and tweets.tweeted_at by exactly 2,555
+# days, as whole days on the zone-less timestamps. 2,555 is a whole number of weeks, so
+# every weekday and every wall-clock time is unchanged, daylight saving included. The
+# first order, 2018-09-01T08:20:00, becomes 2025-08-30T08:20:00; the orders end on
+# 2025-11-28; Philadelphia opens on 2025-08-30 and Brooklyn on 2026-03-10. Nothing else
+# changes except the published names: raw_items.csv becomes order_items.csv, the other raw_
+# prefixes drop, and the header columns orders.customer and tweets.user_id become
+# customer_id. shift.py's own SHA-256 is SHIFT_SHA256 below; its input is checked against
+# trim.SHA256SUMS before it reads anything. SHA256SUMS in this directory pins every file in
+# data/, and derive/reproduce.sh requires the shift output to match both exactly.
+#
+# Steps 4 and 5 are not complete yet; until they land, the chain ends at data/ without
+# addresses.
 
 JAFGEN_VERSION=0.4.14
 JAFGEN_SOURCE=dbt-labs/jaffle-shop-generator
@@ -119,3 +132,5 @@ JAFGEN_COMMAND='jafgen 1 --pre raw'
 JAFGEN_RUN_AT=2026-09-24T04:50:10Z
 TRIM_SHA256=f7c658ff6ed90bdb6cd6d5d58bf0b93900265f43010f1b173deb0774a406a2ca
 TRIM_WINDOW='[2018-09-01T08:20:00, 2018-12-01T00:00:00)'
+SHIFT_SHA256=a1f19abaadb16784b1b2df814b2e07e0a02de74316ddd3cd4ab9ec37b1471a44
+SHIFT_DAYS=2555
