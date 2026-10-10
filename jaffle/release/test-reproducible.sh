@@ -83,7 +83,8 @@ expected_time=$(TZ=UTC date -u -d "@$epoch" '+%Y-%m-%d %H:%M:%S' 2>/dev/null ||
 grep -v " $expected_time" "$work/listing" && fail "an entry's mtime is not $expected_time"
 for want in jaffle/data/customers.csv jaffle/db/load.sql jaffle/db/initdb.sh \
     jaffle/db/check_load.sql jaffle/expected/counts.yaml jaffle/SHA256SUMS jaffle/NOTICE \
-    jaffle/LICENSE.jaffle-shop-generator; do
+    jaffle/LICENSE.jaffle-shop-generator jaffle/project/amfelt.yaml \
+    jaffle/project/contracts/jaffle.odcs.yaml; do
     grep -qx "$want" "$work/names" || fail "the archive lacks $want"
 done
 grep -E '^jaffle/(derive|release)/|PROVENANCE|VERSION|__pycache__' "$work/names" &&
@@ -94,8 +95,8 @@ grep -v '/$' "$work/names" >"$work/got"
 diff -u "$work/want" "$work/got" || fail "the archive's files differ from ASSET_FILES"
 echo "ok: root, order, owner, mtime and exact content list"
 
-# A stray file in db/ or expected/ must stop the build.
-for dir in db expected; do
+# A stray file in db/, expected/ or project/ must stop the build.
+for dir in db expected project; do
     mkdir -p "$work/stray"
     rm -rf "$work/stray/jaffle"
     cp -R "$root/jaffle" "$work/stray/jaffle"
@@ -105,7 +106,7 @@ for dir in db expected; do
         fail "a stray file in $dir/ was packed"
     fi
 done
-echo "ok: a stray file in db/ or expected/ stops the build"
+echo "ok: a stray file in db/, expected/ or project/ stops the build"
 
 # check-tag.sh accepts and rejects.
 printf '1.0.0\n' >"$work/VERSION"

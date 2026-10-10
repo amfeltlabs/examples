@@ -7,8 +7,8 @@
 #                 jaffle-v1.0.0-rc.1.tar.gz
 #   <output dir>  receives the tarball and jaffle-<version>.tar.gz.sha256
 #
-# The tarball's root is jaffle/ and holds data/, db/, expected/, SHA256SUMS, NOTICE and
-# LICENSE.jaffle-shop-generator: what consumers load. The derivation scripts, PROVENANCE,
+# The tarball's root is jaffle/ and holds data/, db/, expected/, project/, SHA256SUMS,
+# NOTICE and LICENSE.jaffle-shop-generator: what consumers load. The derivation scripts, PROVENANCE,
 # VERSION and release tooling stay in the repository.
 #
 # Reproducibility: the files are copied to a staging tree with explicit modes (0755 for
@@ -94,12 +94,12 @@ mkdir -p "$stage/jaffle"
 (
     cd "$src"
     {
-        find data db -type f
+        find data db project -type f
         find expected -type f ! -name '*.pyc' ! -path '*/__pycache__/*'
         printf '%s\n' SHA256SUMS NOTICE LICENSE.jaffle-shop-generator
     } | sort
 ) >"$work/files"
-# The shipped list is exact: a stray file in db/ or expected/ must be added to
+# The shipped list is exact: a stray file in db/, expected/ or project/ must be added to
 # jaffle/release/ASSET_FILES by a reviewed change, or the build refuses.
 if ! diff -u "$src/release/ASSET_FILES" "$work/files" >"$work/files.diff"; then
     cat "$work/files.diff" >&2
