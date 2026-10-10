@@ -67,3 +67,27 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: pnpm exec commitlint --from "$BASE_SHA" --to "$HEAD_SHA" --verbose
+
+  # Regenerates the trimmed Jaffle corpus from the archived full-year run and compares it
+  # with the pinned digests. jafgen is never run.
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Download the full-year archive
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download corpus/jaffle-fullyear-2026-09-24 \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern jaffle-fullyear-jafgen-0.4.14.tar.gz \
+            --dir "$RUNNER_TEMP"
+
+      - name: Reproduce the derivation chain
+        run: sh jaffle/derive/reproduce.sh "$RUNNER_TEMP/jaffle-fullyear-jafgen-0.4.14.tar.gz"
