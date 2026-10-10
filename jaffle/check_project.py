@@ -20,7 +20,11 @@ modes therefore has to change counts.yaml, whose layer rules counts.py checks ag
 modes, together with the project file. The JSON Schema check in CI covers the file's shape;
 this one covers what the counts depend on.
 
-Needs PyYAML for the project file; counts.yaml is read with counts.py's own parser.
+The project file is read with PyYAML when it is installed, as in CI. Without it, a small
+standard-library reader takes over, for readers of the tutorial whose python3 has no
+PyYAML: it reads the block-style subset the agent writes (mappings, sequences, plain and
+quoted scalars) and refuses anything else. CHECK_PROJECT_YAML=builtin forces it.
+counts.yaml is read with counts.py's own parser.
 """
 
 import importlib.util
@@ -28,7 +32,10 @@ import os
 import re
 import sys
 
-import yaml
+try:
+    import yaml
+except ImportError:  # the built-in reader below takes over
+    yaml = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_PROJECT = os.path.join(HERE, "project", "amfelt.yaml")
@@ -82,6 +89,114 @@ def read_image(path, problems):
             and values["AGENT_IMAGE_TAG"] != "v" + values["AGENT_VERSION"]:
         problems.append("%s: AGENT_IMAGE_TAG %r is not v%s" % (path, values["AGENT_IMAGE_TAG"], values["AGENT_VERSION"]))
     return values
+
+
+class ProjectYamlError(Exception):
+    pass
+
+
+PLAIN_KEY = re.compile(r'([A-Za-z_][A-Za-z0-9_.-]*):(?: (.*))?\Z')
+
+
+def builtin_scalar(text, where):
+    if text.startswith('"'):
+        if len(text) < 2 or not text.endswith('"') or '\\' in text or '"' in text[1:-1]:
+            raise ProjectYamlError("%s: unsupported string %s" % (where, text))
+        return text[1:-1]
+    if text.startswith("'"):
+        if len(text) < 2 or not text.endswith("'") or "'" in text[1:-1]:
+            raise ProjectYamlError("%s: unsupported string %s" % (where, text))
+        return text[1:-1]
+    if text[:1] in "[]{}&*!|>%@`#" or " #" in text or ": " in text:
+        raise ProjectYamlError("%s: unsupported value %r" % (where, text))
+    if re.match(r"-?(0|[1-9][0-9]*)\Z", text):
+        return int(text)
+    if text in ("true", "false"):
+        return text == "true"
+    if text in ("null", "~"):
+        return None
+    # Plain words PyYAML would type as a float, a boolean or a date are refused rather than
+    # read differently.
+    if re.match(r"[-+]?([0-9]*\.[0-9]+|[0-9]+\.)([eE][-+]?[0-9]+)?\Z", text) \
+            or text.lower() in ("yes", "no", "on", "off", "y", "n", "true", "false", "null") \
+            or re.match(r"[0-9]{4}-[0-9]{2}-[0-9]{2}\Z", text):
+        raise ProjectYamlError("%s: %r is typed differently by YAML readers; quote it" % (where, text))
+    return text
+
+
+def builtin_load(text, name):
+    """The block-style YAML the agent writes, as nested dicts and lists."""
+    lines = []
+    for number, raw in enumerate(text.split("\n"), 1):
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped in ("---", "..."):
+            raise ProjectYamlError("%s:%d: document markers are not supported" % (name, number))
+        indent = len(raw) - len(raw.lstrip(" "))
+        if raw[indent:indent + 1] == "\t":
+            raise ProjectYamlError("%s:%d: tabs are not allowed" % (name, number))
+        lines.append(["%s:%d" % (name, number), indent, raw.rstrip()[indent:]])
+    pos = [0]
+
+    def is_item(line):
+        return line[2] == "-" or line[2].startswith("- ")
+
+    def block(indent):
+        return sequence(indent) if is_item(lines[pos[0]]) else mapping(indent)
+
+    def mapping(indent):
+        out = {}
+        while pos[0] < len(lines) and lines[pos[0]][1] == indent and not is_item(lines[pos[0]]):
+            where, _, content = lines[pos[0]]
+            m = PLAIN_KEY.match(content)
+            if not m:
+                raise ProjectYamlError("%s: expected 'key: value', got %r" % (where, content))
+            key, rest = m.group(1), (m.group(2) or "").strip()
+            if key in out:
+                raise ProjectYamlError("%s: duplicate key %r" % (where, key))
+            pos[0] += 1
+            if rest:
+                out[key] = builtin_scalar(rest, where)
+            elif pos[0] < len(lines) and (lines[pos[0]][1] > indent
+                                          or (lines[pos[0]][1] == indent and is_item(lines[pos[0]]))):
+                out[key] = block(lines[pos[0]][1])
+            else:
+                out[key] = None
+        return out
+
+    def sequence(indent):
+        out = []
+        while pos[0] < len(lines) and lines[pos[0]][1] == indent and is_item(lines[pos[0]]):
+            where, _, content = lines[pos[0]]
+            rest = content[1:].strip()
+            if not rest:
+                raise ProjectYamlError("%s: an empty sequence item is not supported" % where)
+            if PLAIN_KEY.match(rest):
+                # "- key: value" opens a mapping whose keys sit two columns in.
+                lines[pos[0]] = [where, indent + 2, rest]
+                out.append(mapping(indent + 2))
+            else:
+                out.append(builtin_scalar(rest, where))
+                pos[0] += 1
+        return out
+
+    if not lines:
+        return None
+    if lines[0][1] != 0:
+        raise ProjectYamlError("%s: the document must start at column 1" % lines[0][0])
+    data = block(0)
+    if pos[0] != len(lines):
+        raise ProjectYamlError("%s: inconsistent indentation" % lines[pos[0]][0])
+    return data
+
+
+def load_project(path):
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    if yaml is not None and os.environ.get("CHECK_PROJECT_YAML") != "builtin":
+        return yaml.safe_load(text)
+    return builtin_load(text, os.path.basename(path))
 
 
 def plugin(project, category, name, problems):
@@ -147,8 +262,11 @@ def main(argv):
         return 1
     problems = []
     image = read_image(image_path, problems)
-    with open(project_path, encoding="utf-8") as handle:
-        project = yaml.safe_load(handle)
+    try:
+        project = load_project(project_path)
+    except ProjectYamlError as err:
+        print("check_project.py: %s" % err, file=sys.stderr)
+        return 1
     problems += check(project, expected["job"], image)
     if problems:
         print("check_project.py: %s does not match:\n  %s" % (project_path, "\n  ".join(problems)),
