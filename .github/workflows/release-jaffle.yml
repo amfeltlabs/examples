@@ -33,6 +33,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       kind: ${{ steps.check.outputs.kind }}
+      sha: ${{ steps.check.outputs.sha }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -52,8 +53,13 @@ jobs:
         id: check
         run: |
           kind=$(sh jaffle/release/check-tag.sh "$TAG")
+          # The commit is resolved once, here. Every later job checks out this SHA, and the
+          # release job re-resolves the tag before it publishes, so a tag moved or re-pushed
+          # after the checks passed cannot publish an unchecked commit.
+          sha=$(git rev-parse "refs/tags/$TAG^{commit}")
           echo "kind=$kind" >> "$GITHUB_OUTPUT"
-          echo "ok: $TAG is a $kind of $(head -n 1 jaffle/VERSION)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "ok: $TAG is a $kind of $(head -n 1 jaffle/VERSION), at $sha"
 
   # The same jobs the pull request required: lint, commitlint, reproduce, addresses, load
   # and asset. A tag on a broken tree cannot publish.
@@ -61,7 +67,7 @@ jobs:
     needs: tag
     uses: ./.github/workflows/ci.yml
     with:
-      ref: refs/tags/${{ github.event.inputs.tag || github.ref_name }}
+      ref: ${{ needs.tag.outputs.sha }}
 
   release:
     needs: [tag, ci]
@@ -72,7 +78,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: refs/tags/${{ github.event.inputs.tag || github.ref_name }}
+          ref: ${{ needs.tag.outputs.sha }}
+          fetch-depth: 0
 
       - name: Build the asset
         run: sh jaffle/release/build-asset.sh "$TAG" "$RUNNER_TEMP/asset"
@@ -108,14 +115,23 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           KIND: ${{ needs.tag.outputs.kind }}
+          SHA: ${{ needs.tag.outputs.sha }}
         run: |
           version=${TAG#jaffle/v}
+          # The tag must still point at the commit the checks ran on.
+          git fetch --force --no-tags origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          now=$(git rev-parse "refs/tags/$TAG^{commit}")
+          if [ "$now" != "$SHA" ]; then
+            echo "::error::$TAG moved from $SHA to $now while the checks ran; nothing was published"
+            exit 1
+          fi
           prerelease=
           if [ "$KIND" = prerelease ]; then prerelease=--prerelease; fi
           # shellcheck disable=SC2086 # prerelease is empty or one flag
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
+            --target "$SHA" \
             --title "$TAG" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             --latest=false \

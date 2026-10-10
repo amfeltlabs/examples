@@ -88,7 +88,7 @@ sed 's/^[0-9a-f]*  //' "$src/SHA256SUMS" | sort >"$work/listed"
 cmp -s "$work/on-disk" "$work/listed" ||
     fail "jaffle/SHA256SUMS and jaffle/data/ list different files"
 
-# Stage exactly the shipped files. __pycache__ and other stray files never get in.
+# Collect the shipped files. __pycache__ bytecode is never shipped.
 stage="$work/stage"
 mkdir -p "$stage/jaffle"
 (
@@ -99,6 +99,12 @@ mkdir -p "$stage/jaffle"
         printf '%s\n' SHA256SUMS NOTICE LICENSE.jaffle-shop-generator
     } | sort
 ) >"$work/files"
+# The shipped list is exact: a stray file in db/ or expected/ must be added to
+# jaffle/release/ASSET_FILES by a reviewed change, or the build refuses.
+if ! diff -u "$src/release/ASSET_FILES" "$work/files" >"$work/files.diff"; then
+    cat "$work/files.diff" >&2
+    fail "the files to pack differ from jaffle/release/ASSET_FILES (lines marked + are unlisted)"
+fi
 while IFS= read -r f; do
     [ -f "$src/$f" ] || fail "missing $f"
     mkdir -p "$stage/jaffle/$(dirname "$f")"

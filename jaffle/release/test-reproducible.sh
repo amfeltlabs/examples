@@ -40,8 +40,22 @@ mkdir -p "$work/copy"
 cp -R "$root/jaffle" "$work/copy/jaffle"
 find "$work/copy/jaffle" -type f -exec touch -t 200101010101 {} +
 find "$work/copy/jaffle" -type f -name '*.csv' -exec chmod 0600 {} +
+# Run as root, the owner check would pass even if the build leaked its caller's ids, so
+# build 2 then runs as an unprivileged uid; a leaked owner changes the hash.
+runas=
+if [ "$(id -u)" -eq 0 ]; then
+    if command -v setpriv >/dev/null 2>&1; then
+        runas="setpriv --reuid=12345 --regid=12345 --clear-groups"
+        chmod -R a+rX "$work/copy"
+        mkdir -p "$work/deeper"
+        chmod 0777 "$work" "$work/deeper"
+    else
+        echo "warning: running as root without setpriv; an owner leak would go unseen" >&2
+    fi
+fi
+# shellcheck disable=SC2086 # runas is empty or a command with arguments
 (umask 077 && TZ=Pacific/Auckland JAFFLE_SOURCE="$work/copy" SOURCE_DATE_EPOCH=$epoch \
-    sh "$here/build-asset.sh" "$TAG" "$work/deeper/out-b") >/dev/null
+    $runas sh "$here/build-asset.sh" "$TAG" "$work/deeper/out-b") >/dev/null
 
 a=$(sha256 "$work/out-a/jaffle-v9.9.9-rc.1.tar.gz" | cut -d' ' -f1)
 b=$(sha256 "$work/deeper/out-b/jaffle-v9.9.9-rc.1.tar.gz" | cut -d' ' -f1)
@@ -74,7 +88,24 @@ for want in jaffle/data/customers.csv jaffle/db/load.sql jaffle/db/initdb.sh \
 done
 grep -E '^jaffle/(derive|release)/|PROVENANCE|VERSION|__pycache__' "$work/names" &&
     fail "the archive holds files that are not part of the asset"
-echo "ok: root, order, owner, mtime and content list"
+# The files are exactly the committed list, no more and no less.
+sed 's|^|jaffle/|' "$here/ASSET_FILES" >"$work/want"
+grep -v '/$' "$work/names" >"$work/got"
+diff -u "$work/want" "$work/got" || fail "the archive's files differ from ASSET_FILES"
+echo "ok: root, order, owner, mtime and exact content list"
+
+# A stray file in db/ or expected/ must stop the build.
+for dir in db expected; do
+    mkdir -p "$work/stray"
+    rm -rf "$work/stray/jaffle"
+    cp -R "$root/jaffle" "$work/stray/jaffle"
+    : >"$work/stray/jaffle/$dir/stray.txt"
+    if SOURCE_DATE_EPOCH=$epoch JAFFLE_SOURCE="$work/stray" \
+        sh "$here/build-asset.sh" "$TAG" "$work/out-stray" >/dev/null 2>&1; then
+        fail "a stray file in $dir/ was packed"
+    fi
+done
+echo "ok: a stray file in db/ or expected/ stops the build"
 
 # check-tag.sh accepts and rejects.
 printf '1.0.0\n' >"$work/VERSION"

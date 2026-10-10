@@ -34,9 +34,9 @@ version without `v` or `-rc.N`.
 
    ```bash
    gh release download jaffle/v1.0.0-rc.1 --repo infusal/examples --pattern 'jaffle-v*'
-   sha256sum -c jaffle-v1.0.0-rc.1.tar.gz.sha256
+   sha256sum -c jaffle-v1.0.0-rc.1.tar.gz.sha256   # macOS: shasum -a 256 -c ...
    tar -xzf jaffle-v1.0.0-rc.1.tar.gz
-   (cd jaffle/data && sha256sum -c ../SHA256SUMS)
+   (cd jaffle/data && sha256sum -c ../SHA256SUMS)  # macOS: shasum -a 256 -c ../SHA256SUMS
    ```
 
    The SHA-256 in the release notes must equal the one in the `.sha256` file. Then pin the tag and
@@ -52,6 +52,11 @@ sh jaffle/release/build-asset.sh jaffle/v1.0.0-rc.1 out/
 sh jaffle/release/test-reproducible.sh
 ```
 
-The build needs GNU tar. On macOS run `brew install gnu-tar`; the scripts prefer `gtar`. The
+The files in the asset are listed exactly in `ASSET_FILES`; a new file in `db/` or `expected/`
+fails the build until that list is changed in a reviewed pull request. The build needs GNU tar. On macOS run `brew install gnu-tar`; the scripts prefer `gtar`. The
 tarball's mtime is the commit date of `HEAD`, or `SOURCE_DATE_EPOCH` when set, so the same tag
 commit rebuilds to the same bytes under any timezone, umask or directory.
+
+The SHA-256 depends on the tag commit's date by design (the mtime of every entry), so the
+authoritative SHA-256 is the one in the release notes and the `.sha256` asset, not one computed
+from a different commit.
