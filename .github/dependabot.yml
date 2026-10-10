@@ -8,6 +8,10 @@ updates:
       github-actions:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    commit-message:
+      # An explicit prefix makes Dependabot write a lowercase "bump"; its default title is
+      # "Bump", which commitlint's subject-case rule rejects. Same mechanism as infusal/portal.
+      prefix: "ci"
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
@@ -17,3 +21,5 @@ updates:
       npm:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore"
