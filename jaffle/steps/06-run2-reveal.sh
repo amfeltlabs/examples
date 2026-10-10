@@ -2,8 +2,8 @@
 # Step 6: run 2, and what the history layer remembers.
 #
 # The source now holds only Catherine Navarro's Brooklyn address, and no Jessica Lewis.
-# The history layer keeps both of Catherine's addresses, each with the time it was valid,
-# and closes Jessica's last version instead of losing it.
+# The history layer keeps both of Catherine's addresses, each with the runs that opened
+# and closed it, and closes Jessica's last version instead of losing it.
 #
 # The validity columns hold the start time of the run that opened or closed a version:
 # run 1 and run 2, not the day she moved. They are shown in UTC.
@@ -15,7 +15,8 @@ mover=$(expected reveal.customer_id)
 deleted=$(expected reveal.deleted.customer_id)
 
 step "Run 2: loading the changed source into the warehouse"
-docker compose run --rm agent sync --job load --source-url "$SOURCE_URL" --level warn
+url=$(source_url)
+docker compose run --rm agent sync --job load --source-url "$url" --level warn
 
 step "Every version of Catherine Navarro and Jessica Lewis in the history layer"
 docker compose run --rm -T duckdb <<SQL
@@ -63,8 +64,8 @@ if [ "$got" != "$want" ]; then
     printf 'expected:\n%s\nfound:\n%s\n' "$want" "$got" >&2
     fail "the history of the two customers differs from expected/counts.yaml"
 fi
-echo "Catherine Navarro has a closed Philadelphia version and an open Brooklyn one;"
-echo "Jessica Lewis has one closed version and is gone from customers_act."
+echo "$mover_name: a closed version in $(expected reveal.before.city), an open one in $(expected reveal.after.city)."
+echo "$deleted_name: one closed version, and no row in customers_act."
 
 step "Counting the rows in every layer, beside the published expected counts"
 check_counts run2

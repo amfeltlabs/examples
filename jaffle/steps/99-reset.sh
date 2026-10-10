@@ -7,7 +7,7 @@ set -eu
 . "$(dirname "$0")/lib.sh"
 
 step "Stopping the containers and removing the source database's volume"
-docker compose --progress auto --profile tools down --volumes --remove-orphans
+docker compose --progress "$SLOW_PROGRESS" --profile tools down --volumes
 
 step "Clearing work/ and warehouse/"
 rm -rf work warehouse

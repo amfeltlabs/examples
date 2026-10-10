@@ -7,10 +7,10 @@
 # Only the source runs as a service. The agent and the DuckDB shell run one command at a
 # time, with `docker compose run --rm agent <command>` and `docker compose run --rm duckdb`.
 #
-# The agent reaches nothing but the source: its only network is internal, so it has no
-# route to the internet, no control plane and no plugin download. Both plugins it needs
-# are baked into its image.
-name: jaffle
+# The agent reaches nothing but the source: their only network is internal, so neither
+# has a route to the internet or a port on this machine, and the agent has no control
+# plane and no plugin download. Both plugins it needs are baked into its image.
+name: amfelt-jaffle
 
 services:
   # The source: the Jaffle Shop in PostgreSQL, in the schemas sales, catalog and
@@ -27,11 +27,7 @@ services:
       - ./db/initdb.sh:/docker-entrypoint-initdb.d/10-jaffle.sh:ro
       - ./db:/jaffle/db:ro
       - ./data:/data/jaffle:ro
-    # For your own SQL client, on this machine only. The steps do not use it.
-    ports:
-      - 127.0.0.1:${SOURCE_PORT:-55432}:5432
     networks:
-      - default
       - jaffle
     # Healthy once the load has finished: while the entrypoint runs initdb.sh, the server
     # takes no TCP connections, so a query over TCP succeeds only after the load.

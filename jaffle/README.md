@@ -2,12 +2,14 @@
 
 The Jaffle Shop dataset, and a hands-on tutorial that loads it with the Amfelt agent: from
 a PostgreSQL source into a DuckDB warehouse with staging, history and bridge layers, on
-your own machine, with no account.
+your own machine. No Amfelt account is needed, but until the agent image is public,
+pulling it requires access to its GitHub package.
 
 ## What you need
 
-- Docker with Docker Compose v2.
-- `python3`, which the steps use to read the published expected results.
+- Docker with Docker Compose 2.22 or later.
+- `python3`, which the steps use to read the published expected results and to check
+  your project against them.
 - About 650 MB of disk for the three images, and a network connection to pull them.
 
 ## The tutorial

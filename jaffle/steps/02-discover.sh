@@ -1,6 +1,7 @@
 #!/bin/sh
-# Step 2: discover the source. The agent reads the database's structure and its comments
-# and writes them down as a data contract, in the Open Data Contract Standard (ODCS).
+# Step 2: discover the source. The agent reads the database's tables, columns and keys,
+# and the comments on its tables and columns, and writes them down as a data contract in
+# the Open Data Contract Standard (ODCS).
 #
 # This step works in a scratch project, work/discover/, so you can look around before you
 # build the real project in step 3.
@@ -10,7 +11,7 @@ set -eu
 
 step "Starting a scratch project in work/discover/"
 rm -rf work/discover
-docker compose run --rm agent init --name discover --path discover/amfelt.yaml
+docker compose run --rm agent init --name discover --path discover/amfelt.yaml --level warn
 
 step "Declaring the two plugins in the agent image, so it needs no download"
 cat >>work/discover/amfelt.yaml <<'YAML'
@@ -24,7 +25,8 @@ plugins:
 YAML
 
 step "Importing the three schemas of the source into one contract"
-docker compose run --rm agent import jaffle "$SOURCE_URL" \
+url=$(source_url)
+docker compose run --rm agent import jaffle "$url" \
     --namespace sales,catalog,marketing --abbreviation jaffle \
     --path discover/amfelt.yaml --level warn
 
