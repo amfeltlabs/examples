@@ -1,0 +1,121 @@
+# Where the Jaffle Shop corpus came from.
+#
+# The corpus was made in two steps, both on 2026-09-24: ONE run of jafgen wrote a full
+# year of data, and derive/trim.py cut that year down to its first calendar quarter. The
+# full-year files are not committed. They are archived as the asset
+# jaffle-fullyear-jafgen-0.4.14.tar.gz (sha256 bd37c5d94a332ea93f6e24ce4f5b5f94b70f189f
+# 4ec5e31e6f32b3333e15568b) of the release corpus/jaffle-fullyear-2026-09-24 of this
+# repository. Their digests are below, and trim.py refuses any input that does not match
+# them. derive/trim.SHA256SUMS pins the bytes trim.py writes, and derive/reproduce.sh
+# checks the archive, runs trim.py and compares its output against those digests.
+#
+# THE ONE GENERATION RUN
+#
+# That run is the only time jafgen was used, and it must never be repeated as part of
+# any automated path: not by a seed, a test, CI, a Makefile target or the tutorial.
+# jafgen draws fresh UUIDs and unseeded random numbers on every run, so a second run
+# produces different rows, and nothing could assert against it.
+#
+# How the run was made, exactly:
+#
+#   uv venv --python 3.12 venv            # an isolated venv; nothing installed globally
+#   uv pip install --python venv/bin/python 'jafgen==0.4.14'
+#   cd <empty dir> && venv/bin/jafgen 1 --pre raw
+#   # jafgen writes ./jaffle-data/raw_*.csv; those seven files are the input to trim.py
+#
+#   Arguments   years=1 (the positional argument), --pre raw (the default prefix)
+#   Started     2026-09-24T04:50:10Z; exit status 0
+#   Host        macOS 27.0 arm64, uv 0.12.18, CPython 3.12.14
+#   Installed   jafgen==0.4.14, faker==40.39.0, numpy==2.5.3, typer==0.27.2,
+#               rich==15.0.0, annotated-doc==0.0.5, markdown-it-py==4.2.0, mdurl==0.1.2,
+#               pygments==2.21.0, shellingham==1.5.4 (the complete `uv pip freeze`)
+#   Wheel       jafgen-0.4.14-py3-none-any.whl, sha256
+#               0f92684fb49050a56a4de5d8214b90365ff84ef6ae7c685abf899e0ad1918913 (PyPI)
+#   Source      github.com/dbt-labs/jaffle-shop-generator, tag v0.4.14, commit
+#               9384961105e3de9296c61b235155f3240fab1140; its pyproject.toml declares
+#               version 0.4.14
+#
+# WHY ONE YEAR, THEN ONE QUARTER
+#
+# years=1 is the smallest run the CLI accepts that writes data: the argument is a whole
+# number of years, the customer base per store is fixed in jafgen's code, and, reading
+# that code, a zero-year run simulates no days and has no rows to write. A year was
+# still too large for a corpus that ships in a public quickstart, so it was trimmed.
+#
+# The full-year files, as the run wrote them (rows are data lines, header excluded,
+# counted with Python's csv module):
+#
+#   raw_customers.csv       946 rows        49,511 bytes
+#   raw_items.csv       107,853 rows     8,951,816 bytes
+#   raw_orders.csv       72,610 rows    10,432,080 bytes
+#   raw_products.csv         10 rows           923 bytes
+#   raw_stores.csv            6 rows           477 bytes
+#   raw_supplies.csv         65 rows         2,655 bytes
+#   raw_tweets.csv       22,476 rows     4,038,262 bytes
+#
+# and their SHA-256 digests, the SHA256SUMS of the full year:
+#
+#   d0633d42103841f51dfb05474bdc66b9962b3368f134bbf4d1dc2e15b9012292  raw_customers.csv
+#   1ddb9ccd5bfdbd1587bccf3b06c5e4c96d0a8647771b02637af58d9b1adf26f8  raw_items.csv
+#   19b051ac14ce299fc2b8d6a0088d1c9d88d0bd98e4d75432966666f4a219e5f5  raw_orders.csv
+#   01825b18e182090b6770cee6aaf7bd52d5781a0c74bb1ff2872aac4b47809f0d  raw_products.csv
+#   a83ac006ab8cab7cd7722d0cfeab87b01d7a9caa4cc373eb63de5e13764d5683  raw_stores.csv
+#   309a2d1cfd330da2b493b411d2fe5e0aef1b463ed0281760691793f8b423bde1  raw_supplies.csv
+#   fb8f1adfe8bda55d753b5a9c01adde1fa94aa88d9a3b46b12957021e702b8861  raw_tweets.csv
+#
+# THE TRIM
+#
+#   python3 derive/trim.py <full-year dir> <empty dir>    # Python standard library only
+#
+# trim.py's own SHA-256 is TRIM_SHA256 below; its docstring states the rule, and in
+# short it is:
+#
+#   * the window is the half-open interval [2018-09-01T08:20:00, 2018-12-01T00:00:00) on
+#     raw_orders.ordered_at: from the earliest order to midnight on the first day of the
+#     third calendar month after it, so September, October and November 2018;
+#   * raw_orders keeps the orders in the window, raw_items the items of those orders,
+#     and raw_tweets the tweets whose tweeted_at lies in the same window;
+#   * raw_customers keeps exactly the customers those orders name. The full year has no
+#     customer without an order, and the quarter keeps that true: a snapshot taken at the
+#     end of the window holds no customer whose first order comes after it, so a later
+#     delta adds a new customer as a new row. Every kept tweet's user is one of them;
+#   * raw_stores, raw_products and raw_supplies are jafgen's fixed reference tables,
+#     written whole on every run, and pass through byte for byte. Only Philadelphia
+#     trades in the window; the other five stores open later, as the full year's
+#     Chicago, San Francisco, New Orleans and Los Angeles already did.
+#
+# Kept rows are the full year's bytes, in its order, CRLF line endings included. Every
+# reference a kept row makes resolves to a kept row. trim.py is deterministic: two runs
+# on the full-year files wrote identical files. The trimmed corpus is 2,214,285 bytes:
+#
+#   raw_customers.csv       232 rows        12,097 bytes
+#   raw_items.csv        10,025 rows       832,092 bytes
+#   raw_orders.csv        6,837 rows       982,871 bytes
+#   raw_products.csv         10 rows           923 bytes
+#   raw_stores.csv            6 rows           477 bytes
+#   raw_supplies.csv         65 rows         2,655 bytes
+#   raw_tweets.csv        2,161 rows       383,170 bytes
+#
+# 19,336 rows in all. Their digests are in derive/trim.SHA256SUMS. The trim output is an
+# intermediate: it is not committed, and the later steps below change its bytes.
+#
+# THE DERIVATION CHAIN
+#
+#   1. archive              jaffle-fullyear-jafgen-0.4.14.tar.gz, the one generation run
+#   2. derive/trim.py       the first calendar quarter of orders and what they reference
+#                           (this step; checked by derive/reproduce.sh)
+#   3. derive/shift.py      moves every timestamp forward by 2,555 days (later item)
+#   4. derive/addresses.py  adds a deterministic address per customer (later item)
+#   5. data/ + SHA256SUMS   the pinned outputs of the chain (later item)
+#
+# Steps 3 to 5 do not exist yet; until they land, only steps 1 and 2 are in this
+# repository.
+
+JAFGEN_VERSION=0.4.14
+JAFGEN_SOURCE=dbt-labs/jaffle-shop-generator
+JAFGEN_TAG=v0.4.14
+JAFGEN_COMMIT=9384961105e3de9296c61b235155f3240fab1140
+JAFGEN_COMMAND='jafgen 1 --pre raw'
+JAFGEN_RUN_AT=2026-09-24T04:50:10Z
+TRIM_SHA256=f7c658ff6ed90bdb6cd6d5d58bf0b93900265f43010f1b173deb0774a406a2ca
+TRIM_WINDOW='[2018-09-01T08:20:00, 2018-12-01T00:00:00)'
