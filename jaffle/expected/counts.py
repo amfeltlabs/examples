@@ -9,7 +9,8 @@ Usage:
                                 last segment: runs.run1.source.sales.customers
   counts.py expect RUN [FILE]   print what db/source_counts.sql prints after RUN (run1 or
                                 run2), for a diff: one line per source table, then the
-                                mover's row, tab-separated
+                                mover's row, then, after run1 only, the deleted
+                                customer's row; tab-separated
 
 FILE defaults to counts.yaml beside this script. Every command validates the file first
 and refuses to read an invalid one.
@@ -40,6 +41,13 @@ BARE_TABLES = tuple(t.split(".", 1)[1] for t in SOURCE_TABLES)
 RUNS = ("run1", "run2")
 LAYERS = ("source", "staging", "history", "bridge_act", "bridge_hst")
 ADDRESS_FIELDS = ("street", "postal_code", "city", "country")
+# The history mode each table is loaded with. SCD2 closes a version on an update or a
+# delete and opens one on an insert or an update; append inserts new keys and closes
+# nothing.
+HISTORY_MODE = {
+    "customers": "scd2", "products": "scd2", "stores": "scd2", "supplies": "scd2",
+    "orders": "append", "order_items": "append", "tweets": "append",
+}
 
 KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*\Z")
 INTEGER = re.compile(r"-?(0|[1-9][0-9]*)\Z")
@@ -50,6 +58,7 @@ NON_STRING_WORDS = {
 }
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
 ZIP = re.compile(r"[0-9]{5}\Z")
+BROOKLYN_ZIP = re.compile(r"112[0-9]{2}\Z")
 
 
 class CountsError(Exception):
@@ -231,101 +240,171 @@ def check_keys(problems, where, mapping, expected):
     return not missing and not extra
 
 
+def check_address(problems, where, address):
+    """True when address holds the four fields, each a one-line string, the ZIP 5 digits."""
+    if not check_keys(problems, where, address, ADDRESS_FIELDS):
+        return False
+    ok = True
+    for field in ADDRESS_FIELDS:
+        value = address[field]
+        if not isinstance(value, str) or not value.strip() or "\t" in value or "\n" in value:
+            ok = False
+            problems.append("%s.%s: must be a non-empty one-line string, is %r" % (where, field, value))
+    if isinstance(address["postal_code"], str) and not ZIP.match(address["postal_code"]):
+        ok = False
+        problems.append("%s.postal_code: must be a quoted 5-digit ZIP code" % where)
+    return ok
+
+
+def check_customer(problems, where, block):
+    if not isinstance(block["customer_id"], str) or not UUID.match(block["customer_id"]):
+        problems.append("%s.customer_id: must be a lowercase UUID string, is %r" % (where, block["customer_id"]))
+    if not isinstance(block["name"], str) or not block["name"].strip():
+        problems.append("%s.name: must be a non-empty string" % where)
+
+
+def check_history(problems, where, history, rows, closed, open_):
+    """A history expectation: rows versions after run 2, the closed and the open one named
+    by the address they hold (none: there is no such version)."""
+    if not check_keys(problems, where, history, ("run", "rows", "valid_to_column", "closed", "open")):
+        return
+    if history["run"] != "run2":
+        problems.append("%s.run: must be run2, is %r" % (where, history["run"]))
+    if not is_count(history["rows"]) or history["rows"] != rows:
+        problems.append("%s.rows: must be %d, is %r" % (where, rows, history["rows"]))
+    if not isinstance(history["valid_to_column"], str) or not KEY.match(history["valid_to_column"]):
+        problems.append("%s.valid_to_column: must be a column name" % where)
+    if history["closed"] != closed:
+        problems.append("%s.closed: must be %s, is %r" % (where, closed, history["closed"]))
+    if history["open"] != open_:
+        problems.append("%s.open: must be %s, is %r" % (where, open_, history["open"]))
+
+
+def check_bridge_act(problems, where, bridge, rows, holds):
+    """A bridge_act expectation: rows active rows after run 2, holding the named address."""
+    if not check_keys(problems, where, bridge, ("run", "rows", "holds")):
+        return
+    if bridge["run"] != "run2":
+        problems.append("%s.run: must be run2, is %r" % (where, bridge["run"]))
+    if not is_count(bridge["rows"]) or bridge["rows"] != rows:
+        problems.append("%s.rows: must be %d, is %r" % (where, rows, bridge["rows"]))
+    if bridge["holds"] != holds:
+        problems.append("%s.holds: must be %s, is %r" % (where, holds, bridge["holds"]))
+
+
+def check_runs(problems, runs):
+    complete = []
+    for run in RUNS:
+        if not check_keys(problems, "runs.%s" % run, runs[run], LAYERS):
+            continue
+        ok = True
+        for layer in LAYERS:
+            where = "runs.%s.%s" % (run, layer)
+            tables = SOURCE_TABLES if layer == "source" else BARE_TABLES
+            if not check_keys(problems, where, runs[run][layer], tables):
+                ok = False
+                continue
+            for table in tables:
+                if not is_count(runs[run][layer][table]):
+                    ok = False
+                    problems.append("%s.%s: must be a non-negative integer, is %r"
+                                    % (where, table, runs[run][layer][table]))
+        if ok:
+            complete.append(run)
+
+    # Rules that hold for every run, whatever the data, by history mode. They cannot catch a
+    # history count that is wrong together with the views over it; that needs the run's
+    # inserts, updates and deletes, and the engine-capture scenario asserts it.
+    for run in complete:
+        layers = runs[run]
+
+        def mismatch(layer, table, expected, rule):
+            if layers[layer][table] != expected:
+                problems.append("runs.%s.%s.%s: %s, %d, not %d"
+                                % (run, layer, table, rule, expected, layers[layer][table]))
+
+        for source_name, table in zip(SOURCE_TABLES, BARE_TABLES):
+            source = layers["source"][source_name]
+            history = layers["history"][table]
+            mismatch("staging", table, source, "a full load stages the source")
+            if HISTORY_MODE[table] == "scd2":
+                mismatch("bridge_act", table, layers["staging"][table],
+                         "scd2 keeps one open version per source row, as staging holds")
+                mismatch("bridge_hst", table, history, "is the whole history table")
+            else:
+                mismatch("bridge_act", table, history, "append closes nothing, so it is all of history")
+                mismatch("bridge_hst", table, history, "is the whole history table")
+            if run == "run1":
+                for layer in LAYERS[1:]:
+                    mismatch(layer, table, source, "run 1 starts from empty layers, so it equals the source")
+    if complete == list(RUNS):
+        for table in BARE_TABLES:
+            if runs["run2"]["history"][table] < runs["run1"]["history"][table]:
+                problems.append("runs.run2.history.%s: history never loses a row, %d is less than run 1's %d"
+                                % (table, runs["run2"]["history"][table], runs["run1"]["history"][table]))
+
+
+def check_reveal(problems, reveal):
+    if not check_keys(problems, "reveal", reveal,
+                      ("object", "key_column", "customer_id", "name", "before", "after",
+                       "history", "bridge_act", "deleted")):
+        return
+    if reveal["object"] != "customers":
+        problems.append("reveal.object: must be customers, is %r" % (reveal["object"],))
+    if reveal["key_column"] != "id":
+        problems.append("reveal.key_column: must be id, is %r" % (reveal["key_column"],))
+
+    # The customer who moves.
+    check_customer(problems, "reveal", reveal)
+    before_ok = check_address(problems, "reveal.before", reveal["before"])
+    after_ok = check_address(problems, "reveal.after", reveal["after"])
+    if after_ok:
+        after = reveal["after"]
+        if after["city"] != "Brooklyn":
+            problems.append("reveal.after.city: the move is to Brooklyn, not %r" % (after["city"],))
+        if not BROOKLYN_ZIP.match(after["postal_code"]):
+            problems.append("reveal.after.postal_code: a Brooklyn ZIP code is 112xx, not %r"
+                            % (after["postal_code"],))
+    if before_ok and after_ok:
+        before, after = reveal["before"], reveal["after"]
+        for field in ("street", "postal_code", "city"):
+            if before[field] == after[field]:
+                problems.append("reveal: a move changes the %s, but before and after are both %r"
+                                % (field, before[field]))
+        if before["country"] != after["country"]:
+            problems.append("reveal: the move stays in the country, but %r becomes %r"
+                            % (before["country"], after["country"]))
+    check_history(problems, "reveal.history", reveal["history"], 2, "before", "after")
+    check_bridge_act(problems, "reveal.bridge_act", reveal["bridge_act"], 1, "after")
+
+    # The customer run 2 deletes.
+    deleted = reveal["deleted"]
+    if not check_keys(problems, "reveal.deleted", deleted,
+                      ("customer_id", "name", "before", "history", "bridge_act")):
+        return
+    check_customer(problems, "reveal.deleted", deleted)
+    if deleted["customer_id"] == reveal["customer_id"]:
+        problems.append("reveal.deleted.customer_id: must not be the customer who moves")
+    check_address(problems, "reveal.deleted.before", deleted["before"])
+    check_history(problems, "reveal.deleted.history", deleted["history"], 1, "before", "none")
+    check_bridge_act(problems, "reveal.deleted.bridge_act", deleted["bridge_act"], 0, "none")
+    if (isinstance(reveal["history"], dict) and isinstance(deleted["history"], dict)
+            and reveal["history"].get("valid_to_column") != deleted["history"].get("valid_to_column")):
+        problems.append("reveal.deleted.history.valid_to_column: must equal reveal.history.valid_to_column")
+
+
 def validate(data):
     """Every problem with the parsed file, as a list of messages; empty when it is valid."""
     problems = []
     if not check_keys(problems, "top level", data, ("schema", "dataset", "runs", "reveal")):
         return problems
-    if data["schema"] != 1 or isinstance(data["schema"], bool):
+    if not is_count(data["schema"]) or data["schema"] != 1:
         problems.append("schema: must be 1, is %r" % (data["schema"],))
     if data["dataset"] != "jaffle":
         problems.append("dataset: must be jaffle, is %r" % (data["dataset"],))
-
-    runs = data["runs"]
-    if check_keys(problems, "runs", runs, RUNS):
-        for run in RUNS:
-            if not check_keys(problems, "runs.%s" % run, runs[run], LAYERS):
-                continue
-            complete = True
-            for layer in LAYERS:
-                where = "runs.%s.%s" % (run, layer)
-                tables = SOURCE_TABLES if layer == "source" else BARE_TABLES
-                if not check_keys(problems, where, runs[run][layer], tables):
-                    complete = False
-                    continue
-                for table in tables:
-                    if not is_count(runs[run][layer][table]):
-                        complete = False
-                        problems.append("%s.%s: must be a non-negative integer, is %r"
-                                        % (where, table, runs[run][layer][table]))
-            if not complete:
-                continue
-            # Rules that hold for every run, whatever the data: a full load stages the source
-            # snapshot, and bridge_hst is a view over the whole history table.
-            layers = runs[run]
-            for source_name, table in zip(SOURCE_TABLES, BARE_TABLES):
-                if layers["staging"][table] != layers["source"][source_name]:
-                    problems.append("runs.%s.staging.%s: a full load stages the source, %d, not %d"
-                                    % (run, table, layers["source"][source_name], layers["staging"][table]))
-                if layers["bridge_hst"][table] != layers["history"][table]:
-                    problems.append("runs.%s.bridge_hst.%s: is the whole history table, %d, not %d"
-                                    % (run, table, layers["history"][table], layers["bridge_hst"][table]))
-                if run == "run1":
-                    for layer in LAYERS[1:]:
-                        if layers[layer][table] != layers["source"][source_name]:
-                            problems.append("runs.run1.%s.%s: run 1 starts from empty layers, so it "
-                                            "equals the source, %d, not %d"
-                                            % (layer, table, layers["source"][source_name], layers[layer][table]))
-
-    reveal = data["reveal"]
-    if check_keys(problems, "reveal", reveal,
-                  ("object", "key_column", "customer_id", "name", "before", "after", "history")):
-        if reveal["object"] != "customers":
-            problems.append("reveal.object: must be customers, is %r" % (reveal["object"],))
-        if reveal["key_column"] != "id":
-            problems.append("reveal.key_column: must be id, is %r" % (reveal["key_column"],))
-        if not isinstance(reveal["customer_id"], str) or not UUID.match(reveal["customer_id"]):
-            problems.append("reveal.customer_id: must be a lowercase UUID string, is %r"
-                            % (reveal["customer_id"],))
-        if not isinstance(reveal["name"], str) or not reveal["name"].strip():
-            problems.append("reveal.name: must be a non-empty string")
-        addresses_ok = True
-        for version in ("before", "after"):
-            where = "reveal.%s" % version
-            if not check_keys(problems, where, reveal[version], ADDRESS_FIELDS):
-                addresses_ok = False
-                continue
-            for field in ADDRESS_FIELDS:
-                value = reveal[version][field]
-                if not isinstance(value, str) or not value.strip() or "\t" in value or "\n" in value:
-                    addresses_ok = False
-                    problems.append("%s.%s: must be a non-empty one-line string, is %r" % (where, field, value))
-            if isinstance(reveal[version]["postal_code"], str) and not ZIP.match(reveal[version]["postal_code"]):
-                addresses_ok = False
-                problems.append("%s.postal_code: must be a quoted 5-digit ZIP code" % where)
-        if addresses_ok:
-            before, after = reveal["before"], reveal["after"]
-            for field in ("street", "postal_code", "city"):
-                if before[field] == after[field]:
-                    problems.append("reveal: a move changes the %s, but before and after are both %r"
-                                    % (field, before[field]))
-            if before["country"] != after["country"]:
-                problems.append("reveal: the move stays in the country, but %r becomes %r"
-                                % (before["country"], after["country"]))
-        history = reveal["history"]
-        if check_keys(problems, "reveal.history", history,
-                      ("run", "rows", "valid_to_column", "closed", "open")):
-            if history["run"] != "run2":
-                problems.append("reveal.history.run: must be run2, is %r" % (history["run"],))
-            if history["rows"] != 2 or isinstance(history["rows"], bool):
-                problems.append("reveal.history.rows: one move makes two versions, 2, not %r"
-                                % (history["rows"],))
-            if not isinstance(history["valid_to_column"], str) or not KEY.match(history["valid_to_column"]):
-                problems.append("reveal.history.valid_to_column: must be a column name")
-            if history["closed"] != "before":
-                problems.append("reveal.history.closed: the closed version holds the before address")
-            if history["open"] != "after":
-                problems.append("reveal.history.open: the open version holds the after address")
+    if check_keys(problems, "runs", data["runs"], RUNS):
+        check_runs(problems, data["runs"])
+    check_reveal(problems, data["reveal"])
     return problems
 
 
@@ -370,6 +449,11 @@ def expect(data, run):
     address = reveal["before" if run == "run1" else "after"]
     lines.append("\t".join(["mover", reveal["customer_id"], reveal["name"]]
                            + [address[f] for f in ADDRESS_FIELDS]))
+    # The deleted customer is in the source after run 1 and gone after run 2.
+    deleted = reveal["deleted"]
+    if run == "run1":
+        lines.append("\t".join(["deleted", deleted["customer_id"], deleted["name"]]
+                               + [deleted["before"][f] for f in ADDRESS_FIELDS]))
     return "\n".join(lines) + "\n"
 
 

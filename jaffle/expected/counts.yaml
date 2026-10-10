@@ -56,14 +56,21 @@ runs:
     bridge_act:  { customers: 233, stores: 6, orders: 6841, order_items: 10031, products: 10, supplies: 65, tweets: 2163 }
     bridge_hst:  { customers: 236, stores: 6, orders: 6841, order_items: 10031, products: 11, supplies: 65, tweets: 2163 }
 
-# The history reveal: the customer who moves to Brooklyn in run 2. In the source, the
-# customer is the row of sales.customers whose id is customer_id; in the warehouse, the
-# rows of the history object `object` whose `key_column` is customer_id. The address
-# fields are named after their columns. After run 2 the history object holds exactly
-# history.rows rows for that id: the `closed` one, holding the before address, has its
-# valid_to column set; the `open` one, holding the after address, has it null. The name
-# does not change: the move is the only change to this customer, so each version differs
-# from the other in the address alone.
+# The history reveal: the customer who moves to Brooklyn in run 2, and the customer run 2
+# deletes. In the source, each is the row of sales.customers whose id is its customer_id;
+# in the warehouse, the rows of the history object `object` whose `key_column` is that id,
+# and of its bridge_act view. The address fields are named after their columns, and a
+# version is named by the address it holds: before (run 1's), after (run 2's), or none.
+#
+# The mover: after run 2 the history object holds exactly history.rows rows for the id.
+# The `closed` one, holding the before address, has its valid_to column set; the `open`
+# one, holding the after address, has it null. bridge_act holds one row, the after
+# address. The name does not change: the move is the only change to this customer, so the
+# two versions differ in the address alone.
+#
+# The deleted customer: after run 2 the history object holds exactly one row for the id,
+# closed, holding the before address, and no open one; bridge_act holds no row for it.
+# The source holds the row after run 1 and none after run 2.
 reveal:
   object: customers
   key_column: id
@@ -77,3 +84,21 @@ reveal:
     valid_to_column: ifl_valid_to
     closed: before
     open: after
+  bridge_act:
+    run: run2
+    rows: 1
+    holds: after
+  deleted:
+    customer_id: "09790bf5-a40a-4b7a-8446-a1a224fcb07b"
+    name: "Jessica Lewis"
+    before: { street: "3405 Spring Garden St", postal_code: "19149", city: "Philadelphia", country: "US" }
+    history:
+      run: run2
+      rows: 1
+      valid_to_column: ifl_valid_to
+      closed: before
+      open: none
+    bridge_act:
+      run: run2
+      rows: 0
+      holds: none

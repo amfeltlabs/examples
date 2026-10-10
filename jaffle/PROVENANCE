@@ -158,14 +158,17 @@
 # states, moves to Brooklyn and places that store's first order on its opening day. It
 # runs in its own transaction and changes the source only; the files in data/ stay as
 # published. db/check_run2.sql checks what row counts cannot show: every order's amounts
-# and tax, run 2's prices, no order before its store opened, and Brooklyn's first order.
+# and tax, run 2's prices, no order before its store opened, Brooklyn's first order, and
+# that the mover's new address is in Brooklyn.
 #
 # Step 8, expected/counts.yaml, holds row counts per table for the source and for the
 # warehouse's staging, history and bridge layers, after run 1 and after run 2, and the
-# history reveal: the moving customer's id and both addresses. Its source counts and
-# addresses are checked by CI, against the database (db/source_counts.sql); its warehouse
-# counts are derived from the target's history templates, and its header shows the
-# arithmetic. The stack's engine-capture scenario asserts them against an engine run.
+# history reveal: the moving customer's id and both addresses, and the deleted customer's
+# id and address, each with the history and bridge_act rows expected after run 2. Its
+# source counts and the reveal's source rows are checked by CI, against the database
+# (db/source_counts.sql); its warehouse counts are derived from the target's history
+# templates, and its header shows the arithmetic. The stack's engine-capture scenario
+# asserts them against an engine run.
 # expected/counts.py validates the file's structure and reads values from it, with the
 # Python standard library only. CI (the load job) runs load.sql, the counts of run 1,
 # run2.sql, its check and the counts of run 2, in that order.

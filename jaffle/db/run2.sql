@@ -15,9 +15,9 @@
 --
 -- The whole file is ONE transaction: it opens and commits its own, so a failure anywhere
 -- changes nothing. It needs no --single-transaction, unlike load.sql; with it, psql only
--- warns that a transaction is already in progress. Applied twice, or to a database that already holds its rows, the first
--- duplicate id fails it. ON_ERROR_STOP is turned on here as well, so psql stops at the
--- first error even when the caller forgot the flag.
+-- warns that a transaction is already in progress. Applied twice, or to a database that
+-- already holds its rows, the first duplicate id fails it. ON_ERROR_STOP is turned on here
+-- as well, so psql stops at the first error even when the caller forgot the flag.
 --
 -- Every object is named with its schema, and the search path is pinned to pg_catalog for
 -- the transaction, so nothing resolves through a schema the caller happens to have. No
@@ -33,8 +33,10 @@
 --   marketing.tweets   append  2 inserts, 1 delete
 --   sales.stores, catalog.supplies   untouched
 --
--- No UPDATE touches an append table: append history keeps the first version of a row and
--- skips a changed one as a conflict, so an update there would be wrong data, not history.
+-- No UPDATE touches an append table. Append history inserts only the rows whose key it
+-- has not seen (change action 1, an insert) and closes nothing; a changed row is never
+-- appended and its first version stays as it was, so an update there would be wrong data,
+-- not history.
 -- Each updated customer changes in one way only, so each new SCD2 version shows exactly
 -- one change: Kristin Frank is renamed and does not move; the customer who moves keeps
 -- their name.

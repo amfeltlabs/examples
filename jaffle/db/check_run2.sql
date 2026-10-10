@@ -20,7 +20,8 @@
 --      not traded yet. After run 2 the window reaches Brooklyn's opening day; Chicago, San
 --      Francisco, New Orleans and Los Angeles still open after it and hold no order;
 --   4. the history reveal's beat: Brooklyn's first order is the mover's, on Brooklyn's
---      opening day, and the mover still holds the orders run 1 gave them.
+--      opening day, and the mover still holds the orders run 1 gave them;
+--   5. the mover lives in Brooklyn: city Brooklyn, a 112xx ZIP code, country US.
 \set ON_ERROR_STOP on
 \set QUIET on
 SET search_path = pg_catalog;
@@ -98,6 +99,24 @@ SELECT 'the mover''s orders',
    AND s.name <> 'Brooklyn'
 HAVING pg_catalog.count(o.id) = 0;
 
+-- 5. The move lands in Brooklyn.
+INSERT INTO pg_temp.failures (check_name, detail)
+SELECT 'the mover''s address', d.detail
+  FROM (
+        SELECT CASE
+                 WHEN c.id IS NULL
+                   THEN pg_catalog.format('customer %s is not in sales.customers', :'mover')
+                 WHEN c.city IS DISTINCT FROM 'Brooklyn'
+                   OR c.postal_code IS NULL OR c.postal_code !~ '^112[0-9]{2}$'
+                   OR c.country IS DISTINCT FROM 'US'
+                   THEN pg_catalog.format('%s, %s, %s is not a Brooklyn address',
+                                          c.city, c.postal_code, c.country)
+               END AS detail
+          FROM (SELECT :'mover'::uuid AS id) AS m
+          LEFT JOIN sales.customers AS c ON c.id = m.id
+       ) AS d
+ WHERE d.detail IS NOT NULL;
+
 DO $$
 DECLARE
     report text;
@@ -117,3 +136,4 @@ SELECT 'ok: order amounts and tax, at every store';
 SELECT 'ok: run 2''s orders are priced from their items';
 SELECT 'ok: no order precedes its store''s opening';
 SELECT 'ok: Brooklyn''s first order is the mover''s, on its opening day';
+SELECT 'ok: the mover lives in Brooklyn';

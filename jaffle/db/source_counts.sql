@@ -1,14 +1,16 @@
 -- Print the source's state in the form expected/counts.py prints its expectation, so the
 -- two can be compared with diff:
 --
---   psql -X -v ON_ERROR_STOP=1 -v mover=<uuid> -f jaffle/db/source_counts.sql
+--   psql -X -v ON_ERROR_STOP=1 -v mover=<uuid> -v deleted=<uuid> \
+--        -f jaffle/db/source_counts.sql
 --   python3 jaffle/expected/counts.py expect run1     # or run2
 --
 -- One line per table, "source", the schema-qualified table and its row count, sorted by
--- table name in byte order; then one line for the customer of the history reveal: "mover",
--- the id, the name and the four address columns. Fields are separated by tabs. mover is a
--- psql variable holding that customer's id (counts.py get reveal.customer_id); a customer
--- the source does not hold prints no line, so the diff fails.
+-- table name in byte order; then one line for each customer of the history reveal that the
+-- source holds: "mover" or "deleted", the id, the name and the four address columns.
+-- Fields are separated by tabs. mover and deleted are psql variables holding the two ids
+-- (counts.py get reveal.customer_id, reveal.deleted.customer_id). A customer the source
+-- does not hold prints no line: the deleted customer's line is expected after run 1 only.
 --
 -- Read-only. The search path is pinned to pg_catalog, so every name resolves as written.
 \set ON_ERROR_STOP on
@@ -32,3 +34,7 @@ SELECT pg_catalog.concat_ws(E'\t', 'source', t.tbl, t.n)
 SELECT pg_catalog.concat_ws(E'\t', 'mover', c.id, c.name, c.street, c.postal_code, c.city, c.country)
   FROM sales.customers AS c
  WHERE c.id = :'mover';
+
+SELECT pg_catalog.concat_ws(E'\t', 'deleted', c.id, c.name, c.street, c.postal_code, c.city, c.country)
+  FROM sales.customers AS c
+ WHERE c.id = :'deleted';

@@ -194,22 +194,24 @@ jobs:
 
       # The source half of counts.yaml is a fact this job can check; the warehouse layers are
       # derived, and the stack's engine-capture scenario checks them against an engine run.
-      # The reveal's customer must hold the before address now and the after address once
-      # run 2 is applied.
+      # The reveal's mover must hold the before address now and the after address once run
+      # 2 is applied; its deleted customer must be present now and gone after run 2.
       - name: Compare the source with run 1's expected counts
         env:
           SERVICE_NETWORK: ${{ job.services.postgres.network }}
         run: |
           mover=$(python3 jaffle/expected/counts.py get reveal.customer_id)
+          deleted=$(python3 jaffle/expected/counts.py get reveal.deleted.customer_id)
           python3 jaffle/expected/counts.py expect run1 > "$RUNNER_TEMP/run1.expected"
           docker run --rm --network "$SERVICE_NETWORK" \
             -e PGHOST=postgres -e PGUSER=jaffle -e PGPASSWORD=jaffle -e PGDATABASE=jaffle \
             -v "$GITHUB_WORKSPACE/jaffle:/jaffle:ro" \
             "$POSTGRES_IMAGE" \
-            psql -X -v ON_ERROR_STOP=1 -v mover="$mover" -f /jaffle/db/source_counts.sql \
+            psql -X -v ON_ERROR_STOP=1 -v mover="$mover" -v deleted="$deleted" \
+              -f /jaffle/db/source_counts.sql \
             > "$RUNNER_TEMP/run1.actual"
           diff -u "$RUNNER_TEMP/run1.expected" "$RUNNER_TEMP/run1.actual"
-          echo "ok: the source matches runs.run1.source and the reveal's before address"
+          echo "ok: the source matches runs.run1.source, the before address and the deleted customer"
 
       # run2.sql opens and commits its own transaction.
       - name: Apply run 2
@@ -238,12 +240,14 @@ jobs:
           SERVICE_NETWORK: ${{ job.services.postgres.network }}
         run: |
           mover=$(python3 jaffle/expected/counts.py get reveal.customer_id)
+          deleted=$(python3 jaffle/expected/counts.py get reveal.deleted.customer_id)
           python3 jaffle/expected/counts.py expect run2 > "$RUNNER_TEMP/run2.expected"
           docker run --rm --network "$SERVICE_NETWORK" \
             -e PGHOST=postgres -e PGUSER=jaffle -e PGPASSWORD=jaffle -e PGDATABASE=jaffle \
             -v "$GITHUB_WORKSPACE/jaffle:/jaffle:ro" \
             "$POSTGRES_IMAGE" \
-            psql -X -v ON_ERROR_STOP=1 -v mover="$mover" -f /jaffle/db/source_counts.sql \
+            psql -X -v ON_ERROR_STOP=1 -v mover="$mover" -v deleted="$deleted" \
+              -f /jaffle/db/source_counts.sql \
             > "$RUNNER_TEMP/run2.actual"
           diff -u "$RUNNER_TEMP/run2.expected" "$RUNNER_TEMP/run2.actual"
-          echo "ok: the source matches runs.run2.source and the reveal's after address"
+          echo "ok: the source matches runs.run2.source, the after address, and the deletion"
