@@ -1,0 +1,74 @@
+kind: amfeltProject
+apiVersion: v0.0.0
+id: 11b413cb-4fbb-40ed-8689-056f24203024
+name: jaffle
+version: v1.0.0
+status: production
+createdAt: 2026-10-10T09:49:58.889499876Z
+sources:
+  - name: jaffle
+    plugin: postgres
+    contract: contracts/jaffle.odcs.yaml
+    abbreviation: jaffle
+    schemas:
+      - name: catalog
+        abbreviation: catalog
+      - name: marketing
+        abbreviation: mktg
+      - name: sales
+        abbreviation: sales
+targets:
+  - name: warehouse
+    plugin: duckdb
+    server:
+      server: warehouse
+      type: duckdb
+      path: /work/warehouse/jaffle.duckdb
+    maxConnections: 1
+jobs:
+  - name: load
+    source: jaffle
+    target: warehouse
+    layer: bridge
+    schemaPrefix: jaffle
+    maxParallel: 1
+    select:
+      defaults:
+        historyMode: scd2
+      include:
+        - "*"
+      objects:
+        customers:
+          tableType: master
+          historyMode: scd2
+        products:
+          tableType: reference
+          historyMode: scd2
+        stores:
+          tableType: reference
+          historyMode: scd2
+        supplies:
+          tableType: reference
+          historyMode: scd2
+        orders:
+          tableType: transaction
+          historyMode: append
+          eventTimeCol: ordered_at
+        order_items:
+          tableType: transaction
+          historyMode: append
+        tweets:
+          tableType: transaction
+          historyMode: append
+          eventTimeCol: tweeted_at
+    runs:
+      - name: full
+        strategy: full
+plugins:
+  source:
+    - plugin: postgres
+      version: 4.2.5
+      registry: local
+  target:
+    - plugin: duckdb
+      registry: local

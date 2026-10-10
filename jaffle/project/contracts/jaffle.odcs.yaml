@@ -1,0 +1,480 @@
+apiVersion: v3.0.0
+kind: DataContract
+id: be336bfb-5b9d-45e3-ad69-d81f58c1f802
+name: source-postgres
+version: v1.0.0
+status: production
+schema:
+  - name: products
+    logicalType: object
+    physicalType: table
+    physicalName: products
+    description: One row per SKU sold in the stores
+    properties:
+      - name: sku
+        description: Stock-keeping unit identifying the product.
+        primaryKey: true
+        logicalType: string
+        physicalType: text
+        required: true
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: text
+      - name: name
+        description: Name of the product on the menu.
+        logicalType: string
+        physicalType: text
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: text
+      - name: type
+        description: Product category recorded by the source.
+        logicalType: string
+        physicalType: text
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: text
+      - name: price
+        description: Unit price of the product, in integer cents.
+        logicalType: integer
+        physicalType: int4
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: int4
+      - name: description
+        description: Source-provided description of the product.
+        logicalType: string
+        physicalType: text
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: text
+    customProperties:
+      - property: catalog_schema
+        value: catalog
+  - name: supplies
+    logicalType: object
+    physicalType: table
+    physicalName: supplies
+    description: One row per supply per SKU that uses it
+    properties:
+      - name: id
+        description: Identifier for a supply; together with sku, uniquely identifies a supply-to-product row.
+        primaryKey: true
+        logicalType: string
+        physicalType: text
+        required: true
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: text
+      - name: sku
+        description: Product SKU using the supply; references catalog.products.sku.
+        primaryKey: true
+        logicalType: string
+        physicalType: text
+        required: true
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: text
+          - property: foreign_key
+            value: true
+          - property: foreign_namespace
+            value: catalog
+          - property: foreign_object
+            value: products
+          - property: foreign_property
+            value: sku
+      - name: name
+        description: Name of the supply used by the product.
+        logicalType: string
+        physicalType: text
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: text
+      - name: cost
+        description: Cost of the supply, in integer cents.
+        logicalType: integer
+        physicalType: int4
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: int4
+      - name: perishable
+        description: Whether the supply is marked perishable by the source.
+        logicalType: boolean
+        physicalType: bool
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: bool
+    customProperties:
+      - property: catalog_schema
+        value: catalog
+  - name: tweets
+    logicalType: object
+    physicalType: table
+    physicalName: tweets
+    description: One row per tweet a customer posted about an order
+    properties:
+      - name: id
+        description: Unique identifier for the tweet.
+        primaryKey: true
+        logicalType: string
+        physicalType: uuid
+        required: true
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: uuid
+      - name: customer_id
+        description: Customer who posted the tweet; references sales.customers.id.
+        logicalType: string
+        physicalType: uuid
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: uuid
+          - property: foreign_key
+            value: true
+          - property: foreign_namespace
+            value: sales
+          - property: foreign_object
+            value: customers
+          - property: foreign_property
+            value: id
+      - name: tweeted_at
+        description: Tweet posting timestamp, stored without a time zone.
+        logicalType: date
+        physicalType: timestamp
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: timestamp
+      - name: content
+        description: Text of the tweet recorded by the source.
+        logicalType: string
+        physicalType: text
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: text
+    customProperties:
+      - property: catalog_schema
+        value: marketing
+  - name: customers
+    logicalType: object
+    physicalType: table
+    physicalName: customers
+    description: One row per person who has placed one or more orders
+    properties:
+      - name: id
+        description: Unique identifier for the customer.
+        primaryKey: true
+        logicalType: string
+        physicalType: uuid
+        required: true
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: uuid
+      - name: name
+        description: Customer name as recorded by the source.
+        logicalType: string
+        physicalType: text
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: text
+      - name: street
+        description: "House number and street name of the customer's address. Synthetic: a real Philadelphia street name with a generated house number, not a real person's address."
+        logicalType: string
+        physicalType: text
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: text
+      - name: postal_code
+        description: "Postal code of the customer's address: a 5-digit US ZIP code. Synthetic: a real Philadelphia ZIP code, assigned independently of the street."
+        logicalType: string
+        physicalType: text
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: text
+      - name: city
+        description: City of the customer's address. Synthetic, like the rest of the address.
+        logicalType: string
+        physicalType: text
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: text
+      - name: country
+        description: Country of the customer's address, as an ISO 3166-1 alpha-2 code (US). Synthetic, like the rest of the address.
+        logicalType: string
+        physicalType: text
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: text
+    customProperties:
+      - property: catalog_schema
+        value: sales
+  - name: order_items
+    logicalType: object
+    physicalType: table
+    physicalName: order_items
+    description: One row per item in an order
+    properties:
+      - name: id
+        description: Unique identifier for the order item.
+        primaryKey: true
+        logicalType: string
+        physicalType: uuid
+        required: true
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: uuid
+      - name: order_id
+        description: Order containing this item; references sales.orders.id.
+        logicalType: string
+        physicalType: uuid
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: uuid
+          - property: foreign_key
+            value: true
+          - property: foreign_namespace
+            value: sales
+          - property: foreign_object
+            value: orders
+          - property: foreign_property
+            value: id
+      - name: sku
+        description: Product included in this order item; references catalog.products.sku.
+        logicalType: string
+        physicalType: text
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: text
+          - property: foreign_key
+            value: true
+          - property: foreign_namespace
+            value: catalog
+          - property: foreign_object
+            value: products
+          - property: foreign_property
+            value: sku
+    customProperties:
+      - property: catalog_schema
+        value: sales
+  - name: orders
+    logicalType: object
+    physicalType: table
+    physicalName: orders
+    description: One row per order; an order holds zero or more items
+    properties:
+      - name: id
+        description: Unique identifier for the order.
+        primaryKey: true
+        logicalType: string
+        physicalType: uuid
+        required: true
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: uuid
+      - name: customer_id
+        description: Customer who placed the order; references sales.customers.id.
+        logicalType: string
+        physicalType: uuid
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: uuid
+          - property: foreign_key
+            value: true
+          - property: foreign_namespace
+            value: sales
+          - property: foreign_object
+            value: customers
+          - property: foreign_property
+            value: id
+      - name: store_id
+        description: Store where the order was placed; references sales.stores.id.
+        logicalType: string
+        physicalType: uuid
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: uuid
+          - property: foreign_key
+            value: true
+          - property: foreign_namespace
+            value: sales
+          - property: foreign_object
+            value: stores
+          - property: foreign_property
+            value: id
+      - name: ordered_at
+        description: Order placement timestamp, stored without a time zone.
+        logicalType: date
+        physicalType: timestamp
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: timestamp
+      - name: subtotal
+        description: Order subtotal before tax, in integer cents.
+        logicalType: integer
+        physicalType: int4
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: int4
+      - name: tax_paid
+        description: Tax charged on the order, in integer cents.
+        logicalType: integer
+        physicalType: int4
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: int4
+      - name: order_total
+        description: "Total charged for the order, in integer cents: subtotal + tax_paid."
+        logicalType: integer
+        physicalType: int4
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: int4
+    customProperties:
+      - property: catalog_schema
+        value: sales
+  - name: stores
+    logicalType: object
+    physicalType: table
+    physicalName: stores
+    description: The stores where orders are placed
+    properties:
+      - name: id
+        description: Unique identifier for the store.
+        primaryKey: true
+        logicalType: string
+        physicalType: uuid
+        required: true
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: uuid
+      - name: name
+        description: Store name as recorded by the source.
+        logicalType: string
+        physicalType: text
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: text
+      - name: opened_at
+        description: "Store opening timestamp, stored without a time zone. A date after the order window, the span of sales.orders.ordered_at, is a planned opening: that store has not traded yet."
+        logicalType: date
+        physicalType: timestamp
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: timestamp
+      - name: tax_rate
+        description: Tax rate expressed as a decimal fraction; 0.06 represents 6%.
+        logicalType: number
+        physicalType: numeric(6,4)
+        required: false
+        customProperties:
+          - property: source_driver
+            value: postgres
+          - property: source_physical_type
+            value: numeric
+    customProperties:
+      - property: catalog_schema
+        value: sales
+servers:
+  - server: source-postgres
+    type: postgres
+    database: jaffle
+    host: source
+    port: 5432
+    schema: catalog
+    customProperties:
+      - property: sslmode
+        value: disable
+contractCreatedTs: 2026-10-10T09:50:20.921934512Z
+provenance:
+  sourceDriver: postgres
+  introspectedAt: 2026-10-10T09:50:21.042155137Z

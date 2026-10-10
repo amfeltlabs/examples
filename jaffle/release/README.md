@@ -2,8 +2,9 @@
 
 A tag `jaffle/vX.Y.Z` publishes a GitHub release of this repository with two assets:
 
-- `jaffle-vX.Y.Z.tar.gz`, whose root is `jaffle/` holding `data/`, `db/`, `expected/`, `SHA256SUMS`,
-  `NOTICE` and `LICENSE.jaffle-shop-generator`. The derivation scripts, `PROVENANCE` and
+- `jaffle-vX.Y.Z.tar.gz`, whose root is `jaffle/` holding `data/`, `db/`, `expected/`, `project/`
+  (the tutorial's project file and contract), `SHA256SUMS`, `NOTICE` and
+  `LICENSE.jaffle-shop-generator`. The derivation scripts, `PROVENANCE` and
   `VERSION` stay in the repository; the asset is what consumers load.
 - `jaffle-vX.Y.Z.tar.gz.sha256`, one line in the standard `<hex>  <name>` format.
 
@@ -52,8 +53,8 @@ sh jaffle/release/build-asset.sh jaffle/v1.0.0-rc.1 out/
 sh jaffle/release/test-reproducible.sh
 ```
 
-The files in the asset are listed exactly in `ASSET_FILES`; a new file in `db/` or `expected/`
-fails the build until that list is changed in a reviewed pull request. The build needs GNU tar. On macOS run `brew install gnu-tar`; the scripts prefer `gtar`. The
+The files in the asset are listed exactly in `ASSET_FILES`; a new file in `db/`, `expected/` or
+`project/` fails the build until that list is changed in a reviewed pull request. The build needs GNU tar. On macOS run `brew install gnu-tar`; the scripts prefer `gtar`. The
 tarball's mtime is the commit date of `HEAD`, or `SOURCE_DATE_EPOCH` when set, so the same tag
 commit rebuilds to the same bytes under any timezone, umask or directory.
 
