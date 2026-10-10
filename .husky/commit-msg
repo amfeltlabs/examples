@@ -1,0 +1,46 @@
+#!/bin/sh
+# Run commitlint, but stay silent on success.
+#
+# Extend PATH so pnpm and node are discoverable when hooks run outside a login
+# shell (e.g. VSCode's Git extension), which sources neither ~/.zshrc nor
+# ~/.bashrc.
+#
+# Both the with-bin and without-bin forms of each pnpm home are listed. That is
+# not redundancy: 6590d445 found the standalone installer placing its binary at
+# ${HOME}/Library/pnpm/bin/pnpm rather than directly in the home, while corepack
+# shims land directly in the prefix. A PATH entry that does not exist costs
+# nothing, so both layouts are covered rather than guessed at.
+#
+# The AppData entries are the Windows layout -- the npm prefix where corepack
+# shims go, and the standalone installer's %LOCALAPPDATA% pnpm home -- in the
+# POSIX form Git Bash needs. Without them every commit on Windows fails with
+# `command not found` (exit 127).
+export PATH="${PATH}:/opt/homebrew/bin:/usr/local/bin:${HOME}/Library/pnpm:${HOME}/Library/pnpm/bin:${HOME}/.local/share/pnpm:${HOME}/.local/share/pnpm/bin:${HOME}/AppData/Roaming/npm:${HOME}/AppData/Local/pnpm:${HOME}/AppData/Local/pnpm/bin:/c/Program Files/nodejs"
+
+# pnpm exports PNPM_HOME itself, on every platform. Written as an `if` rather
+# than `[ -n ... ] && export`, because an EMPTY PATH element means the current
+# directory -- appending an unset variable would put CWD on PATH.
+if [ -n "${PNPM_HOME:-}" ]; then
+	export PATH="${PATH}:${PNPM_HOME}:${PNPM_HOME}/bin"
+fi
+
+# A roaming profile can move %APPDATA% and %LOCALAPPDATA% off ${HOME}. Resolve
+# them where Git Bash's path converter exists; on Unix `command -v` is a builtin
+# miss and nothing forks.
+if command -v cygpath >/dev/null 2>&1; then
+	[ -n "${APPDATA:-}" ] && export PATH="${PATH}:$(cygpath -u "${APPDATA}")/npm"
+	[ -n "${LOCALAPPDATA:-}" ] && export PATH="${PATH}:$(cygpath -u "${LOCALAPPDATA}")/pnpm"
+fi
+
+if [ -d "${HOME}/.nvm/versions/node" ]; then
+	for nvm_bin in "${HOME}/.nvm/versions/node/"*/bin; do
+		[ -d "$nvm_bin" ] && export PATH="${PATH}:${nvm_bin}"
+	done
+fi
+
+out=$(pnpm exec commitlint --edit "$1" 2>&1)
+status=$?
+if [ $status -ne 0 ]; then
+	printf '%s\n' "$out"
+	exit $status
+fi

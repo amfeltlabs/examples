@@ -1,0 +1,22 @@
+name: PR auto-merge
+
+# Dependabot pull requests only; the shared workflow applies ADR-072 (external bumps are
+# trusted by semver, anything it will not merge is labelled for a human).
+on: pull_request_target
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  automerge:
+    uses: infusal/github-actions/.github/workflows/dependabot-automerge.yaml@main
+    with:
+      tier: full-auto
+      deployable: false
+      merge-method: merge
+    secrets:
+      # The auto-merge App. Without it the shared workflow arms under GITHUB_TOKEN, which
+      # never enqueues on a branch with a merge queue.
+      AUTOMERGE_APP_ID: ${{ secrets.AUTOMERGE_APP_ID }}
+      AUTOMERGE_APP_PRIVATE_KEY: ${{ secrets.AUTOMERGE_APP_PRIVATE_KEY }}

@@ -1,0 +1,2 @@
+# CI and external tooling install the pinned pnpm version; pnpm must not manage itself.
+pmOnFail: ignore

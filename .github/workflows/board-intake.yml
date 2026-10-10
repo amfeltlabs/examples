@@ -1,0 +1,12 @@
+name: Board intake
+on:
+  issues:
+    types: [opened, labeled, transferred, reopened]
+
+jobs:
+  route:
+    uses: infusal/github-actions/.github/workflows/board-intake.yaml@main
+    with:
+      issue: "${{ github.repository }}#${{ github.event.issue.number }}"
+    secrets:
+      BOARD_INTAKE_TOKEN: ${{ secrets.BOARD_INTAKE_TOKEN }}
