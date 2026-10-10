@@ -1,0 +1,104 @@
+# The published expected results of the Jaffle corpus: row counts per table and per layer,
+# after run 1 (db/load.sql) and after run 2 (db/run2.sql), and the history reveal.
+#
+# The source counts are facts: CI loads the corpus, applies run 2, and compares the
+# database with runs.*.source and with the reveal's addresses. Every warehouse count is
+# DERIVED, not observed: it follows from the history templates of the DuckDB target
+# (connectors duckdb/templates scd2.sql, append.sql and bridge.sql) under a full load of
+# every table, and it is asserted against a real engine run by the stack's engine-capture
+# scenario. A mismatch there is resolved before a release: an engine defect is filed as a
+# bug, a wrong expectation is corrected here.
+#
+# Layer maps are keyed by the bare object name, because the warehouse lands every source
+# schema in one schema per layer (agent#778). Table names are unique across the three
+# source schemas, so the bare names do not collide.
+#
+# History modes: customers, products, stores and supplies are SCD2; orders, order_items
+# and tweets are append, with event times ordered_at and tweeted_at.
+#
+# The rule per layer, with B the run-1 rows, and I, U and D the rows run 2 inserts,
+# updates and deletes:
+#
+#   staging        the source snapshot of the run            B + I - D
+#   history scd2   closes the updated and deleted versions,   B + I + U
+#                  inserts the new and the updated ones
+#   history append inserts new keys only; closes nothing      B + I
+#   bridge_act     the history rows with no valid_to:
+#                    scd2                                     B + I - D
+#                    append                                   B + I
+#   bridge_hst     the whole history table                    = history
+#
+# Run 1 starts from empty layers, so every layer equals the source.
+#
+#   object        B      I   U   D   staging              history             bridge_act
+#   customers     232    2   2   1   232+2-1   = 233      232+2+2   = 236     233
+#   products      10     0   1   0   10                   10+1      = 11      10
+#   stores        6      0   0   0   6                    6                   6
+#   supplies      65     0   0   0   65                   65                  65
+#   orders        6837   4   0   2   6837+4-2  = 6839     6837+4    = 6841    6841
+#   order_items   10025  6   0   3   10025+6-3 = 10028    10025+6   = 10031   10031
+#   tweets        2161   2   0   1   2161+2-1  = 2162     2161+2    = 2163    2163
+#
+# db/run2.sql names every inserted, updated and deleted row and says why.
+schema: 1
+dataset: jaffle
+runs:
+  run1:
+    source:      { sales.customers: 232, sales.stores: 6, sales.orders: 6837, sales.order_items: 10025, catalog.products: 10, catalog.supplies: 65, marketing.tweets: 2161 }
+    staging:     { customers: 232, stores: 6, orders: 6837, order_items: 10025, products: 10, supplies: 65, tweets: 2161 }
+    history:     { customers: 232, stores: 6, orders: 6837, order_items: 10025, products: 10, supplies: 65, tweets: 2161 }
+    bridge_act:  { customers: 232, stores: 6, orders: 6837, order_items: 10025, products: 10, supplies: 65, tweets: 2161 }
+    bridge_hst:  { customers: 232, stores: 6, orders: 6837, order_items: 10025, products: 10, supplies: 65, tweets: 2161 }
+  run2:
+    source:      { sales.customers: 233, sales.stores: 6, sales.orders: 6839, sales.order_items: 10028, catalog.products: 10, catalog.supplies: 65, marketing.tweets: 2162 }
+    staging:     { customers: 233, stores: 6, orders: 6839, order_items: 10028, products: 10, supplies: 65, tweets: 2162 }
+    history:     { customers: 236, stores: 6, orders: 6841, order_items: 10031, products: 11, supplies: 65, tweets: 2163 }
+    bridge_act:  { customers: 233, stores: 6, orders: 6841, order_items: 10031, products: 10, supplies: 65, tweets: 2163 }
+    bridge_hst:  { customers: 236, stores: 6, orders: 6841, order_items: 10031, products: 11, supplies: 65, tweets: 2163 }
+
+# The history reveal: the customer who moves to Brooklyn in run 2, and the customer run 2
+# deletes. In the source, each is the row of sales.customers whose id is its customer_id;
+# in the warehouse, the rows of the history object `object` whose `key_column` is that id,
+# and of its bridge_act view. The address fields are named after their columns, and a
+# version is named by the address it holds: before (run 1's), after (run 2's), or none.
+#
+# The mover: after run 2 the history object holds exactly history.rows rows for the id.
+# The `closed` one, holding the before address, has its valid_to column set; the `open`
+# one, holding the after address, has it null. bridge_act holds one row, the after
+# address. The name does not change: the move is the only change to this customer, so the
+# two versions differ in the address alone.
+#
+# The deleted customer: after run 2 the history object holds exactly one row for the id,
+# closed, holding the before address, and no open one; bridge_act holds no row for it.
+# The source holds the row after run 1 and none after run 2.
+reveal:
+  object: customers
+  key_column: id
+  customer_id: "8224248d-b37a-4e73-8571-24b7d3435150"
+  name: "Catherine Navarro"
+  before: { street: "947 Spruce St", postal_code: "19118", city: "Philadelphia", country: "US" }
+  after:  { street: "418 Atlantic Ave", postal_code: "11217", city: "Brooklyn", country: "US" }
+  history:
+    run: run2
+    rows: 2
+    valid_to_column: ifl_valid_to
+    closed: before
+    open: after
+  bridge_act:
+    run: run2
+    rows: 1
+    holds: after
+  deleted:
+    customer_id: "09790bf5-a40a-4b7a-8446-a1a224fcb07b"
+    name: "Jessica Lewis"
+    before: { street: "3405 Spring Garden St", postal_code: "19149", city: "Philadelphia", country: "US" }
+    history:
+      run: run2
+      rows: 1
+      valid_to_column: ifl_valid_to
+      closed: before
+      open: none
+    bridge_act:
+      run: run2
+      rows: 0
+      holds: none

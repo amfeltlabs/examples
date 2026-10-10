@@ -110,6 +110,9 @@
 #                           SHA256SUMS)
 #   5. data/ + SHA256SUMS   the pinned outputs of the chain (steps 3 and 4 write to them)
 #   6. db/load.sql          the consumer of data/: loads it into PostgreSQL; writes no file
+#   7. db/run2.sql          run 2: hand-authored changes to the loaded source; writes no file
+#   8. expected/counts.yaml the expected results of runs 1 and 2, derived by hand from the
+#                           target's history templates; nothing generates it
 #
 # Step 3 shifts stores.opened_at, orders.ordered_at and tweets.tweeted_at by exactly 2,555
 # days, as whole days on the zone-less timestamps. 2,555 is a whole number of weeks, so
@@ -147,6 +150,28 @@
 # db/check_load.sql checks the loaded model: types, nullability, comments, keys and
 # constraints, and row counts counted from the files themselves. CI (the load job) runs
 # load.sql and the check against a digest-pinned PostgreSQL 17.
+#
+# Step 7 is not derived from anything: db/run2.sql is written by hand, against the loaded
+# corpus, and jafgen plays no part in it. It is the stack's goldenset delta carried over to
+# these names, with its dates moved by the same 2,555 days, addresses for its two new
+# customers, and one added change: an existing customer, chosen by the rule its header
+# states, moves to Brooklyn and places that store's first order on its opening day. It
+# runs in its own transaction and changes the source only; the files in data/ stay as
+# published. db/check_run2.sql checks what row counts cannot show: every order's amounts
+# and tax, run 2's prices, no order before its store opened, Brooklyn's first order, and
+# that the mover's new address is in Brooklyn.
+#
+# Step 8, expected/counts.yaml, holds row counts per table for the source and for the
+# warehouse's staging, history and bridge layers, after run 1 and after run 2, and the
+# history reveal: the moving customer's id and both addresses, and the deleted customer's
+# id and address, each with the history and bridge_act rows expected after run 2. Its
+# source counts and the reveal's source rows are checked by CI, against the database
+# (db/source_counts.sql); its warehouse counts are derived from the target's history
+# templates, and its header shows the arithmetic. The stack's engine-capture scenario
+# asserts them against an engine run.
+# expected/counts.py validates the file's structure and reads values from it, with the
+# Python standard library only. CI (the load job) runs load.sql, the counts of run 1,
+# run2.sql, its check and the counts of run 2, in that order.
 
 JAFGEN_VERSION=0.4.14
 JAFGEN_SOURCE=dbt-labs/jaffle-shop-generator
