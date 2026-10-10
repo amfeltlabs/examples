@@ -1,0 +1,2 @@
+# Resolve "# shellcheck source=lib.sh" beside the step that sources it.
+source-path=SCRIPTDIR
