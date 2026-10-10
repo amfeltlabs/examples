@@ -4,3 +4,8 @@ node_modules/
 # OS files
 .DS_Store
 __pycache__/
+
+# The Jaffle tutorial's local settings and the files its steps write
+jaffle/.env
+jaffle/work/
+jaffle/warehouse/
