@@ -20,15 +20,25 @@ modes therefore has to change counts.yaml, whose layer rules counts.py checks ag
 modes, together with the project file. The JSON Schema check in CI covers the file's shape;
 this one covers what the counts depend on.
 
-Needs PyYAML for the project file; counts.yaml is read with counts.py's own parser.
+The project file is read with PyYAML when it is installed, as in CI. Without it, a small
+standard-library reader takes over, for readers of the tutorial whose python3 has no
+PyYAML. It accepts a strict subset of block-style YAML, the subset the agent writes, and
+returns for it exactly what yaml.safe_load returns; it refuses every input outside the
+subset with an error. builtin_load below lists the subset. CHECK_PROJECT_YAML=builtin
+forces it.
+counts.yaml is read with counts.py's own parser.
 """
 
+import datetime
 import importlib.util
 import os
 import re
 import sys
 
-import yaml
+try:
+    import yaml
+except ImportError:  # the built-in reader below takes over
+    yaml = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_PROJECT = os.path.join(HERE, "project", "amfelt.yaml")
@@ -82,6 +92,206 @@ def read_image(path, problems):
             and values["AGENT_IMAGE_TAG"] != "v" + values["AGENT_VERSION"]:
         problems.append("%s: AGENT_IMAGE_TAG %r is not v%s" % (path, values["AGENT_IMAGE_TAG"], values["AGENT_VERSION"]))
     return values
+
+
+class ProjectYamlError(Exception):
+    pass
+
+
+# The built-in reader. It accepts a strict subset of block-style YAML and returns for it
+# exactly what yaml.safe_load returns; anything outside the subset raises ProjectYamlError.
+#
+#   - The text is printable ASCII and newlines: no tab, carriage return, byte-order mark,
+#     control character or non-ASCII character.
+#   - No document markers, flow collections, anchors, aliases, tags, block scalars or
+#     multi-line scalars.
+#   - Each line, after its indentation, is a comment ("# ..."), "key:", "key: value",
+#     "- value" or "- key: ..." with exactly one space after the dash. Keys are plain
+#     words, unique within their mapping, that YAML reads as strings.
+#   - A value is a double-quoted string with no backslash or quote inside, a single-quoted
+#     string with no quote inside, or a plain scalar that does not start with an indicator,
+#     ends in no colon, and holds no ": " and no " #".
+#
+# A plain scalar is typed by PyYAML's own implicit resolvers (YAML 1.1), copied below from
+# PyYAML 6.0's resolver.py: a bool, a null, a decimal integer without sign or underscores,
+# or a timestamp is built as PyYAML's constructor builds it (timestamp_regexp and
+# construct_yaml_timestamp, copied from constructor.py); every other int, every float,
+# and the merge and value keys are refused. A scalar that matches no resolver is a string.
+RESOLVE_BOOL = re.compile(r'''^(?:yes|Yes|YES|no|No|NO
+                    |true|True|TRUE|false|False|FALSE
+                    |on|On|ON|off|Off|OFF)$''', re.X)
+RESOLVE_FLOAT = re.compile(r'''^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?
+                    |\.[0-9][0-9_]*(?:[eE][-+][0-9]+)?
+                    |[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*
+                    |[-+]?\.(?:inf|Inf|INF)
+                    |\.(?:nan|NaN|NAN))$''', re.X)
+RESOLVE_INT = re.compile(r'''^(?:[-+]?0b[0-1_]+
+                    |[-+]?0[0-7_]+
+                    |[-+]?(?:0|[1-9][0-9_]*)
+                    |[-+]?0x[0-9a-fA-F_]+
+                    |[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+)$''', re.X)
+RESOLVE_MERGE = re.compile(r'^(?:<<)$')
+RESOLVE_NULL = re.compile(r'''^(?: ~
+                    |null|Null|NULL
+                    | )$''', re.X)
+RESOLVE_TIMESTAMP = re.compile(r'''^(?:[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]
+                    |[0-9][0-9][0-9][0-9] -[0-9][0-9]? -[0-9][0-9]?
+                     (?:[Tt]|[ \t]+)[0-9][0-9]?
+                     :[0-9][0-9] :[0-9][0-9] (?:\.[0-9]*)?
+                     (?:[ \t]*(?:Z|[-+][0-9][0-9]?(?::[0-9][0-9])?))?)$''', re.X)
+RESOLVE_VALUE = re.compile(r'^(?:=)$')
+TIMESTAMP_PARTS = re.compile(
+    r'''^(?P<year>[0-9][0-9][0-9][0-9])
+        -(?P<month>[0-9][0-9]?)
+        -(?P<day>[0-9][0-9]?)
+        (?:(?:[Tt]|[ \t]+)
+        (?P<hour>[0-9][0-9]?)
+        :(?P<minute>[0-9][0-9])
+        :(?P<second>[0-9][0-9])
+        (?:\.(?P<fraction>[0-9]*))?
+        (?:[ \t]*(?P<tz>Z|(?P<tz_sign>[-+])(?P<tz_hour>[0-9][0-9]?)
+        (?::(?P<tz_minute>[0-9][0-9]))?))?)?$''', re.X)
+BOOL_VALUES = {"yes": True, "no": False, "true": True, "false": False, "on": True, "off": False}
+DECIMAL = re.compile(r"(0|[1-9][0-9]*)\Z")
+PLAIN_KEY = re.compile(r"([A-Za-z_][A-Za-z0-9_.-]*):(?: (.*))?\Z")
+PLAIN_FIRST_REFUSED = "-?:,[]{}#&*!|>'\"%@`<="
+
+
+def build_timestamp(text, where):
+    """PyYAML's construct_yaml_timestamp, refusing what it would fail on."""
+    values = TIMESTAMP_PARTS.match(text).groupdict()
+    try:
+        year, month, day = int(values["year"]), int(values["month"]), int(values["day"])
+        if not values["hour"]:
+            return datetime.date(year, month, day)
+        hour, minute, second = int(values["hour"]), int(values["minute"]), int(values["second"])
+        fraction = 0
+        tzinfo = None
+        if values["fraction"]:
+            fraction = values["fraction"][:6]
+            while len(fraction) < 6:
+                fraction += "0"
+            fraction = int(fraction)
+        if values["tz_sign"]:
+            delta = datetime.timedelta(hours=int(values["tz_hour"]), minutes=int(values["tz_minute"] or 0))
+            if values["tz_sign"] == "-":
+                delta = -delta
+            tzinfo = datetime.timezone(delta)
+        elif values["tz"]:
+            tzinfo = datetime.timezone.utc
+        return datetime.datetime(year, month, day, hour, minute, second, fraction, tzinfo=tzinfo)
+    except ValueError as err:
+        raise ProjectYamlError("%s: %r is not a valid timestamp: %s" % (where, text, err))
+
+
+def resolve_plain(text, where):
+    """The value PyYAML gives a plain scalar, or a refusal."""
+    if RESOLVE_BOOL.match(text):
+        return BOOL_VALUES[text.lower()]
+    if RESOLVE_NULL.match(text):
+        return None
+    if RESOLVE_TIMESTAMP.match(text):
+        return build_timestamp(text, where)
+    if RESOLVE_INT.match(text):
+        if DECIMAL.match(text):
+            return int(text)
+        raise ProjectYamlError("%s: %r is a YAML 1.1 integer form this reader refuses" % (where, text))
+    if RESOLVE_FLOAT.match(text) or RESOLVE_MERGE.match(text) or RESOLVE_VALUE.match(text):
+        raise ProjectYamlError("%s: %r is typed as a float or a special key by YAML; quote it" % (where, text))
+    return text
+
+
+def builtin_scalar(text, where):
+    if text.startswith('"'):
+        if len(text) < 2 or not text.endswith('"') or "\\" in text or '"' in text[1:-1]:
+            raise ProjectYamlError("%s: unsupported double-quoted string %s" % (where, text))
+        return text[1:-1]
+    if text.startswith("'"):
+        if len(text) < 2 or not text.endswith("'") or "'" in text[1:-1]:
+            raise ProjectYamlError("%s: unsupported single-quoted string %s" % (where, text))
+        return text[1:-1]
+    if text[0] in PLAIN_FIRST_REFUSED or text.endswith(":") or ": " in text or " #" in text:
+        raise ProjectYamlError("%s: unsupported value %r" % (where, text))
+    return resolve_plain(text, where)
+
+
+def builtin_load(text, name):
+    """The block-style YAML the agent writes, as yaml.safe_load would return it."""
+    lines = []
+    for number, raw in enumerate(text.split("\n"), 1):
+        where = "%s:%d" % (name, number)
+        bad = [c for c in raw if not " " <= c <= "~"]
+        if bad:
+            raise ProjectYamlError("%s: character %r is not printable ASCII" % (where, bad[0]))
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("---") or stripped.startswith("..."):
+            raise ProjectYamlError("%s: document markers are not supported" % where)
+        indent = len(raw) - len(raw.lstrip(" "))
+        lines.append([where, indent, raw.rstrip()[indent:]])
+    pos = [0]
+
+    def is_item(line):
+        return line[2] == "-" or line[2].startswith("- ")
+
+    def block(indent):
+        return sequence(indent) if is_item(lines[pos[0]]) else mapping(indent)
+
+    def mapping(indent):
+        out = {}
+        while pos[0] < len(lines) and lines[pos[0]][1] == indent and not is_item(lines[pos[0]]):
+            where, _, content = lines[pos[0]]
+            m = PLAIN_KEY.match(content)
+            if not m:
+                raise ProjectYamlError("%s: expected 'key: value', got %r" % (where, content))
+            key, rest = m.group(1), (m.group(2) or "").strip()
+            if not isinstance(resolve_plain(key, where), str):
+                raise ProjectYamlError("%s: key %r is not read as a string by YAML" % (where, key))
+            if key in out:
+                raise ProjectYamlError("%s: duplicate key %r" % (where, key))
+            pos[0] += 1
+            if rest:
+                out[key] = builtin_scalar(rest, where)
+            elif pos[0] < len(lines) and (lines[pos[0]][1] > indent
+                                          or (lines[pos[0]][1] == indent and is_item(lines[pos[0]]))):
+                out[key] = block(lines[pos[0]][1])
+            else:
+                out[key] = None
+        return out
+
+    def sequence(indent):
+        out = []
+        while pos[0] < len(lines) and lines[pos[0]][1] == indent and is_item(lines[pos[0]]):
+            where, _, content = lines[pos[0]]
+            rest = content[2:]
+            if not rest or rest[0] == " ":
+                raise ProjectYamlError("%s: a sequence item needs exactly one space after the dash" % where)
+            if PLAIN_KEY.match(rest):
+                # "- key: value" opens a mapping whose keys sit two columns in.
+                lines[pos[0]] = [where, indent + 2, rest]
+                out.append(mapping(indent + 2))
+            else:
+                out.append(builtin_scalar(rest, where))
+                pos[0] += 1
+        return out
+
+    if not lines:
+        return None
+    if lines[0][1] != 0:
+        raise ProjectYamlError("%s: the document must start at column 1" % lines[0][0])
+    data = block(0)
+    if pos[0] != len(lines):
+        raise ProjectYamlError("%s: inconsistent indentation" % lines[pos[0]][0])
+    return data
+
+
+def load_project(path):
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    if yaml is not None and os.environ.get("CHECK_PROJECT_YAML") != "builtin":
+        return yaml.safe_load(text)
+    return builtin_load(text, os.path.basename(path))
 
 
 def plugin(project, category, name, problems):
@@ -147,8 +357,11 @@ def main(argv):
         return 1
     problems = []
     image = read_image(image_path, problems)
-    with open(project_path, encoding="utf-8") as handle:
-        project = yaml.safe_load(handle)
+    try:
+        project = load_project(project_path)
+    except ProjectYamlError as err:
+        print("check_project.py: %s" % err, file=sys.stderr)
+        return 1
     problems += check(project, expected["job"], image)
     if problems:
         print("check_project.py: %s does not match:\n  %s" % (project_path, "\n  ".join(problems)),
