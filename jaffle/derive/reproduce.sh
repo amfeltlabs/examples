@@ -55,11 +55,16 @@ fullyear="$work/archive/jaffle-fullyear"
 # 2. Trim. trim.py checks every input file against the full-year digests itself.
 python3 "$here/trim.py" "$fullyear" "$work/trim"
 
-# 3. Compare the trimmed corpus with its pinned digests; any mismatch fails.
-(cd "$work/trim" && sha256 -c "$here/trim.SHA256SUMS") || fail "trim output differs from trim.SHA256SUMS"
-extra=$(find "$work/trim" -type f | wc -l | tr -d ' ')
-want=$(wc -l <"$here/trim.SHA256SUMS" | tr -d ' ')
-[ "$extra" = "$want" ] || fail "trim wrote $extra files, trim.SHA256SUMS lists $want"
+# 3. Compare the trimmed corpus with its pinned digests, exactly: every line of the sums
+# file is well-formed, the names it lists (duplicates kept) are the files trim wrote, and
+# every file matches its digest. sha256sum alone only warns about a malformed line.
+sums="$here/trim.SHA256SUMS"
+bad=$(grep -Evc '^[0-9a-f]{64}  [A-Za-z0-9_.-]+$' "$sums" || true)
+[ "$bad" = 0 ] || fail "trim.SHA256SUMS has $bad malformed line(s)"
+cut -c 67- "$sums" | sort >"$work/names.want"
+(cd "$work/trim" && find . -type f | sed 's#^\./##' | sort) >"$work/names.got"
+cmp -s "$work/names.want" "$work/names.got" || fail "files in trim.SHA256SUMS differ from the files trim wrote"
+(cd "$work/trim" && sha256 -c "$sums") || fail "trim output differs from trim.SHA256SUMS"
 printf 'ok: trim output matches trim.SHA256SUMS\n'
 
 # --- later items append their steps here (shift.py, addresses.py, data/ SHA256SUMS) ---
