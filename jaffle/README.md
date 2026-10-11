@@ -41,6 +41,7 @@ and no reader beside it, so a load fails while the shell holds the file.
 | `compose.yaml`        | The source database, the agent, and a DuckDB shell            |
 | `.env.example`        | The agent image and the demo password; copy it to `.env`      |
 | `steps/`              | The tutorial, one script per step                             |
+| `steps/ci/`           | CI's helpers that run and check the steps; not for readers    |
 | `project/`            | The ready-made project the tutorial builds                    |
 | `db/`, `data/`        | The source model, its data, and the changes of the second run |
 | `expected/`           | The row counts each layer must hold after each run            |
