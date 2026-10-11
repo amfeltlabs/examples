@@ -15,6 +15,15 @@ on:
         description: The ref to check out; empty checks out the triggering ref
         type: string
         default: ""
+  # Runs every job against an existing ref, such as a release tag, with the workflow and
+  # the tutorial job's assertions of the branch it is dispatched on:
+  #   gh workflow run ci.yml --ref main -f ref=jaffle/v1.0.0
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: The ref to check out, for example jaffle/v1.0.0; empty checks out the branch
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -375,3 +384,51 @@ jobs:
 
       - name: Check the project against the expected counts and the image pin
         run: python3 jaffle/check_project.py
+
+  # Runs the tutorial as a reader does: jaffle/steps/01-06 and 99, unchanged, against the
+  # agent quickstart image jaffle/.env.example pins, through jaffle/compose.yaml with the
+  # containers running as the runner's user. jaffle/steps/ci/tutorial.sh asserts, from its
+  # own queries, every warehouse count of both runs and the history reveal against
+  # jaffle/expected/counts.yaml; that a second sync on an unchanged source changes no
+  # count; that a sync while a DuckDB shell holds the warehouse fails and names the lock;
+  # and that steps/99-reset.sh returns step 1 to the freshly loaded source.
+  #
+  # Two checkouts. From the commit that triggered the workflow, in .tutorial-ci/, come only
+  # jaffle/steps/ci/tutorial.sh and check-image-pin.sh. Everything else comes from
+  # inputs.ref: the steps and lib.sh, compose.yaml, .env.example, project/ (amfelt.yaml,
+  # IMAGE), db/ (run2.sql, source_counts.sql), data/, expected/counts.yaml with
+  # counts.py, and check_project.py. So a dispatch tests a release tag's tutorial with the
+  # current helpers. The image is private: the workflow token reads it, which needs this
+  # repository's read access to the ghcr.io package.
+  tutorial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Check out the helpers of the triggering commit
+        uses: actions/checkout@v7
+        with:
+          path: .tutorial-ci
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Check that .env.example runs the image project/IMAGE pins
+        run: sh .tutorial-ci/jaffle/steps/ci/check-image-pin.sh jaffle
+
+      - name: Log in to ghcr.io
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Run the tutorial's steps and assert what it publishes
+        run: sh .tutorial-ci/jaffle/steps/ci/tutorial.sh "$GITHUB_WORKSPACE/jaffle"

@@ -47,9 +47,12 @@ YAML
     step "Choosing each table's type and history: SCD2 for the four master and reference tables, append for the three transaction tables"
     # SCD2 history closes a row's version when the row changes or is deleted, and opens a
     # new one for a change. Append history keeps every row it has seen, deleted ones
-    # included, and closes nothing. No command sets these yet, so they are written into
-    # the job's select block, after the include list. orders and tweets also name the
-    # column that holds their event time.
+    # included, and closes nothing. add-job --history-mode sets one mode for every table
+    # of the job, and advise --apply writes per-table settings that an AI model
+    # recommends, which needs an API key and may differ from one call to the next. The
+    # counts this tutorial publishes need these exact settings per table, so they are
+    # written into the job's select block, after the include list. orders and tweets also
+    # name the column that holds their event time.
     OBJECTS=$(cat <<'YAML'
       objects:
         customers:
