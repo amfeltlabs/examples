@@ -9,4 +9,5 @@ jobs:
     with:
       issue: "${{ github.repository }}#${{ github.event.issue.number }}"
     secrets:
-      BOARD_INTAKE_TOKEN: ${{ secrets.BOARD_INTAKE_TOKEN }}
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
