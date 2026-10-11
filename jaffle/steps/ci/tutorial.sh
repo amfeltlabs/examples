@@ -204,22 +204,24 @@ capture_reveal() {
     done
 }
 
-# check_reveal: the saved rows of both customers hold what the counts file's reveal says.
+# check_reveal [DIR]: the saved rows of both customers, DIR/mover.actual and
+# DIR/deleted.actual ($tmp by default), hold what the counts file's reveal says.
 check_reveal() {
+    rows=${1:-$tmp}
     for who in mover deleted; do
         reveal_block "$who"
         name=$(get "$block.name")
-        expect_customer "$block" >"$tmp/$who.unsorted"
-        sort "$tmp/$who.unsorted" >"$tmp/$who.expected"
-        history_rows=$(grep -c '^history|' "$tmp/$who.actual" || true)
-        bridge_rows=$(grep -c '^bridge_act|' "$tmp/$who.actual" || true)
+        expect_customer "$block" >"$rows/$who.unsorted"
+        sort "$rows/$who.unsorted" >"$rows/$who.expected"
+        history_rows=$(grep -c '^history|' "$rows/$who.actual" || true)
+        bridge_rows=$(grep -c '^bridge_act|' "$rows/$who.actual" || true)
         [ "$history_rows" = "$(get "$block.history.rows")" ] \
             || die "$name has $history_rows rows in ${prefix}_hst.$reveal_object, not $(get "$block.history.rows")"
         [ "$bridge_rows" = "$(get "$block.bridge_act.rows")" ] \
             || die "$name has $bridge_rows rows in ${prefix}_bdg.${reveal_object}_act, not $(get "$block.bridge_act.rows")"
-        diff -u "$tmp/$who.expected" "$tmp/$who.actual" \
+        diff -u "$rows/$who.expected" "$rows/$who.actual" \
             || die "the warehouse rows of $name differ from the reveal in $counts_name"
-        sed 's/^/  /' "$tmp/$who.actual"
+        sed 's/^/  /' "$rows/$who.actual"
         echo "ok: $name: $history_rows history rows and $bridge_rows bridge_act rows, as the reveal says"
     done
 }
@@ -265,15 +267,76 @@ perturb() {
     printf '%s\n' "$out"
 }
 
-# pin_control NAME SED-SCRIPT: check-image-pin.sh must reject a .env.example changed by
-# SED-SCRIPT, beside an unchanged project/IMAGE.
+# pin_control NAME WHAT SED-SCRIPT: check-image-pin.sh must reject a .env.example changed
+# by SED-SCRIPT, beside an unchanged project/IMAGE. WHAT says what changed.
 pin_control() {
-    env_copy=$(perturb "pin-$1" "$2" "$jaffle/.env.example")
+    env_copy=$(perturb "pin-$1" "$3" "$jaffle/.env.example")
     mkdir -p "$tmp/pin-$1/project"
     cp "$jaffle/project/IMAGE" "$tmp/pin-$1/project/IMAGE"
-    must_fail "check-image-pin.sh with the $1 of .env.example changed" \
+    must_fail "check-image-pin.sh with $2 in .env.example" \
         "differs from project/IMAGE's image, tag and digest" \
         sh "$here/check-image-pin.sh" "$(dirname "$env_copy")"
+}
+
+# pin_controls: check-image-pin.sh must reject a .env.example whose digest differs in one
+# hex digit, in the case of one hex digit only, or whose tag differs.
+pin_controls() {
+    pin_digest=$(sed -n 's/^AGENT_IMAGE_DIGEST=sha256://p' "$jaffle/project/IMAGE")
+    case $pin_digest in
+        *0) other_digest=${pin_digest%?}1 ;;
+        *) other_digest=${pin_digest%?}0 ;;
+    esac
+    # The first letter of the digest in upper case: the same hex value, a different text.
+    upper_digest=$(printf '%s\n' "$pin_digest" \
+        | awk 'match($0, /[a-f]/) { print substr($0, 1, RSTART - 1) toupper(substr($0, RSTART, 1)) substr($0, RSTART + 1) }')
+    [ -n "$upper_digest" ] || die "negative control: the digest $pin_digest holds no letter to change the case of"
+    pin_tag=$(sed -n 's/^AGENT_IMAGE_TAG=//p' "$jaffle/project/IMAGE")
+    pin_tag_re=$(printf '%s\n' "$pin_tag" | sed 's/[.]/\\./g')
+    pin_control digest "one hex digit of the digest changed" "s/^\(AGENT_IMAGE=.*@sha256:\)$pin_digest\$/\1$other_digest/"
+    pin_control digest-case "one hex digit of the digest in upper case" "s/^\(AGENT_IMAGE=.*@sha256:\)$pin_digest\$/\1$upper_digest/"
+    pin_control tag "the tag changed" "s/^\(AGENT_IMAGE=[^@]*:\)$pin_tag_re@/\1${pin_tag}9@/"
+}
+
+# rows_control NAME WHAT WHO SED-SCRIPT: check_reveal must reject the saved rows with
+# WHO's rows (mover or deleted) changed by SED-SCRIPT, as an engine defect would change
+# them. The expectation is untouched.
+rows_control() {
+    changed=$(perturb "$1" "$4" "$tmp/$3.actual")
+    for who in mover deleted; do
+        [ "$who" = "$3" ] || cp "$tmp/$who.actual" "$(dirname "$changed")/$who.actual"
+    done
+    must_fail "the reveal with $2" "differ from the reveal" \
+        with_counts "$counts" check_reveal "$(dirname "$changed")"
+}
+
+# run2_controls: the count and reveal assertions must reject run 2's saved rows against a
+# counts file, or rows, changed in one place each.
+run2_controls() {
+    # One count: customers' history, with its bridge_hst mirror, so counts.py still
+    # accepts the file and only the comparison with the warehouse can object.
+    count_copy=$(perturb counts \
+        '/^  run2:/,/^$/{/^    history: /s/customers: \([0-9]*\)/customers: 1\1/;/^    bridge_hst: /s/customers: \([0-9]*\)/customers: 1\1/;}' \
+        "$counts")
+    python3 "$jaffle/expected/counts.py" validate "$count_copy" >/dev/null
+    must_fail "the run 2 counts with customers' history changed" "2 of 28 warehouse counts differ" \
+        with_counts "$count_copy" assert_counts run2 "$tmp/run2.counts"
+    # The mover's closed version, the address she lived at before: its city.
+    city_copy=$(perturb city '/^  before: /s/city: "[^"]*"/city: "Pittsburgh"/' "$counts")
+    python3 "$jaffle/expected/counts.py" validate "$city_copy" >/dev/null
+    must_fail "the mover's closed-row city changed in the counts file" "differ from the reveal" \
+        with_counts "$city_copy" check_reveal
+    # The deleted customer's closed version: its city.
+    deleted_copy=$(perturb deleted '/^    before: /s/city: "[^"]*"/city: "Pittsburgh"/' "$counts")
+    python3 "$jaffle/expected/counts.py" validate "$deleted_copy" >/dev/null
+    must_fail "the deleted customer's closed-row city changed in the counts file" "differ from the reveal" \
+        with_counts "$deleted_copy" check_reveal
+    # The mover's open versions hold the after address, whose city counts.py fixes, so
+    # these change the saved rows instead: the open history row, then the bridge_act row.
+    after_city=$(get reveal.after.city)
+    rows_control open-city "the mover's open history row in another city" mover \
+        "/^history|.*|open\$/s/|$after_city|/|Pittsburgh|/"
+    rows_control bridge-city "the mover's bridge_act row in another city" mover \
+        "/^bridge_act|/s/|$after_city|/|Pittsburgh|/"
 }
 
 # project_resources: the ids of every container, volume and network of the project.
@@ -354,15 +417,7 @@ done
 echo "ok: the sync of Review Focus 4 is the one steps/04-run1.sh runs"
 
 say "negative controls: the image pin"
-pin_digest=$(sed -n 's/^AGENT_IMAGE_DIGEST=sha256://p' "$jaffle/project/IMAGE")
-case $pin_digest in
-    *0) other_digest=${pin_digest%?}1 ;;
-    *) other_digest=${pin_digest%?}0 ;;
-esac
-pin_tag=$(sed -n 's/^AGENT_IMAGE_TAG=//p' "$jaffle/project/IMAGE")
-pin_tag_re=$(printf '%s\n' "$pin_tag" | sed 's/[.]/\\./g')
-pin_control digest "s/^\(AGENT_IMAGE=.*@sha256:\)$pin_digest\$/\1$other_digest/"
-pin_control tag "s/^\(AGENT_IMAGE=[^@]*:\)$pin_tag_re@/\1${pin_tag}9@/"
+pin_controls
 
 say "checking that nothing of the compose project $project exists yet"
 leftover=$(project_resources)
@@ -439,19 +494,7 @@ check_reveal
 # --- Negative controls on the rows run 2 just passed --------------------------------------------
 
 say "negative controls: the count and reveal assertions on run 2's saved rows"
-# One count: customers' history, with its bridge_hst mirror, so counts.py still accepts the
-# file and only the comparison with the warehouse can object.
-count_copy=$(perturb counts \
-    '/^  run2:/,/^$/{/^    history: /s/customers: \([0-9]*\)/customers: 1\1/;/^    bridge_hst: /s/customers: \([0-9]*\)/customers: 1\1/;}' \
-    "$counts")
-python3 "$jaffle/expected/counts.py" validate "$count_copy" >/dev/null
-must_fail "the run 2 counts with customers' history changed" "2 of 28 warehouse counts differ" \
-    with_counts "$count_copy" assert_counts run2 "$tmp/run2.counts"
-# One city: the mover's closed version, the address she lived at before.
-city_copy=$(perturb city '/^  before: /s/city: "[^"]*"/city: "Pittsburgh"/' "$counts")
-python3 "$jaffle/expected/counts.py" validate "$city_copy" >/dev/null
-must_fail "the reveal with the mover's closed-row city changed" "differ from the reveal" \
-    with_counts "$city_copy" check_reveal
+run2_controls
 
 # --- Review Focus 3: the documented reset returns to step 1 ------------------------------------
 
