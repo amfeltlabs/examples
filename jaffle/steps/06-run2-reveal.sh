@@ -22,8 +22,8 @@ step "Every version of Catherine Navarro and Jessica Lewis in the history layer"
 docker compose run --rm -T duckdb <<SQL
 SET TimeZone = 'UTC';
 SELECT name, street, city,
-       date_trunc('second', ifl_valid_from) AS valid_from,
-       date_trunc('second', ifl_valid_to) AS valid_to
+       date_trunc('second', amf_valid_from) AS valid_from,
+       date_trunc('second', amf_valid_to) AS valid_to
   FROM jaffle_hst.customers
  WHERE id IN ('$mover', '$deleted')
  ORDER BY name, valid_from;
@@ -53,7 +53,7 @@ EOF
 )
 got=$(docker compose run --rm -T duckdb -list -noheader <<SQL | sort
 SELECT 'history', name, street, postal_code, city, country,
-       CASE WHEN ifl_valid_to IS NULL THEN 'open' ELSE 'closed' END
+       CASE WHEN amf_valid_to IS NULL THEN 'open' ELSE 'closed' END
   FROM jaffle_hst.customers WHERE id IN ('$mover', '$deleted')
 UNION ALL
 SELECT 'bridge_act', name, street, postal_code, city, country, 'open'
