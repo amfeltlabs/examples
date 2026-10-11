@@ -61,10 +61,14 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "ok: $TAG is a $kind of $(head -n 1 jaffle/VERSION), at $sha"
 
-  # The same jobs the pull request required: lint, commitlint, reproduce, addresses, load
-  # and asset. A tag on a broken tree cannot publish.
+  # The same jobs the pull request required: lint, commitlint, reproduce, addresses, load,
+  # asset, project and tutorial. A tag on a broken tree cannot publish. The tutorial job
+  # pulls the private agent image, so the call grants it packages: read.
   ci:
     needs: tag
+    permissions:
+      contents: read
+      packages: read
     uses: ./.github/workflows/ci.yml
     with:
       ref: ${{ needs.tag.outputs.sha }}
