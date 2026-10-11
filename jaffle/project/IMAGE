@@ -5,8 +5,8 @@
 # is whatever the image installs. Change these lines together with the image, and update
 # or reproduce amfelt.yaml with them. One KEY=value per line; a shell can source it.
 AGENT_IMAGE=ghcr.io/infusal/agent-quickstart
-AGENT_IMAGE_TAG=v4.25.0
-AGENT_IMAGE_DIGEST=sha256:f290b9ffbb523a349647d3fd7e0105d86a064f63d1dc01dbc43ce3a95fcbb30d
-AGENT_VERSION=4.25.0
-SOURCE_POSTGRES_VERSION=4.2.5
-TARGET_DUCKDB_VERSION=2.10.1
+AGENT_IMAGE_TAG=v4.26.1
+AGENT_IMAGE_DIGEST=sha256:993b8e1ecef81e079c66d27f11d3ba8984f54dbd2a2df261504fa11f41c2b578
+AGENT_VERSION=4.26.1
+SOURCE_POSTGRES_VERSION=4.8.0
+TARGET_DUCKDB_VERSION=2.11.0
