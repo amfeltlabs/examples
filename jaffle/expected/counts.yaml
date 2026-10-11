@@ -98,7 +98,7 @@ reveal:
   history:
     run: run2
     rows: 2
-    valid_to_column: ifl_valid_to
+    valid_to_column: amf_valid_to
     closed: before
     open: after
   bridge_act:
@@ -112,7 +112,7 @@ reveal:
     history:
       run: run2
       rows: 1
-      valid_to_column: ifl_valid_to
+      valid_to_column: amf_valid_to
       closed: before
       open: none
     bridge_act:
