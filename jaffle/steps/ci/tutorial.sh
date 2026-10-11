@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC2030,SC2031 # with_counts sets counts in a subshell on purpose
 # Run the Jaffle tutorial as a reader runs it, and assert what it publishes.
 #
 # Usage: sh jaffle/steps/ci/tutorial.sh [JAFFLE_DIR]
@@ -10,13 +11,20 @@
 #   - after steps 4 and 6, every warehouse count of that run in expected/counts.yaml, and
 #     after step 6 the history reveal: the rows of the mover and of the deleted customer
 #     in the history table and in the bridge view of open versions;
-#   - a reader re-running run 1's sync: the counts stay the same (plan Review Focus 3);
+#   - a reader re-running step 4, run 1's sync included: the counts stay the same (plan
+#     Review Focus 3);
 #   - a reader leaving a DuckDB shell open: the sync fails, and its error output names the
 #     lock (Review Focus 4); the warehouse is unchanged afterwards;
 #   - the documented reset, steps/99-reset.sh (docker compose down --volumes): step 1 then
 #     starts from the freshly loaded source, with no project and no warehouse (Focus 3).
 #
 # It ends with steps/99-reset.sh, and runs it on any failure as well.
+#
+# Negative controls prove the assertions can fail. Before the tutorial starts,
+# check-image-pin.sh must reject a .env.example whose digest, and one whose tag, differs
+# from project/IMAGE. After run 2, the count and reveal assertions are run again on the
+# rows they just passed, against a copy of the counts file with one count, and one city
+# of the reveal, changed; each must fail, for that reason. Without a second engine run.
 #
 # JAFFLE_DIR is the jaffle/ directory whose steps, data and expected counts are tested; it
 # defaults to the one this script sits in. CI passes the tree of the ref it tests, so this
@@ -80,9 +88,13 @@ with_lib() {
     sh -c 'set -eu; . "$(dirname "$0")/lib.sh"; '"$1" "$jaffle/steps/tutorial-ci"
 }
 
-# Run 1's sync, as steps/04-run1.sh spells it.
+# Run 1's sync, as steps/04-run1.sh spells it: the preflight checks that both lines still
+# appear there verbatim, so Review Focus 4 tests the command a reader runs.
 # shellcheck disable=SC2016 # expanded by with_lib's shell
-sync_cmd='url=$(source_url); docker compose run --rm agent sync --job load --source-url "$url" --level warn'
+sync_url_line='url=$(source_url)'
+# shellcheck disable=SC2016 # expanded by with_lib's shell
+sync_line='docker compose run --rm agent sync --job load --source-url "$url" --level warn'
+sync_cmd="$sync_url_line; $sync_line"
 
 # duckdb SQL: run SQL in the reader's read-only DuckDB shell; one line per row, fields
 # separated by |.
@@ -172,20 +184,33 @@ actual_customer() {
               FROM ${prefix}_bdg.${reveal_object}_act WHERE $key = '$1'"
 }
 
-# assert_reveal: after run 2, the history and bridge_act rows of both customers.
-assert_reveal() {
-    # The mover's blocks sit at reveal.*, the deleted customer's at reveal.deleted.*.
+# reveal_block WHO: the counts file's block of the mover or the deleted customer, and the
+# id: the mover's blocks sit at reveal.*, the deleted customer's at reveal.deleted.*.
+reveal_block() {
+    case $1 in
+        mover) block=reveal id=$mover ;;
+        deleted) block=reveal.deleted id=$deleted ;;
+    esac
+}
+
+# capture_reveal: after run 2, save the warehouse rows of both customers of the reveal in
+# $tmp/mover.actual and $tmp/deleted.actual, for check_reveal.
+capture_reveal() {
     for who in mover deleted; do
-        case $who in
-            mover) block=reveal id=$mover ;;
-            deleted) block=reveal.deleted id=$deleted ;;
-        esac
-        name=$(get "$block.name")
+        reveal_block "$who"
         valid_to=$(identifier "$(get "$block.history.valid_to_column")")
-        expect_customer "$block" >"$tmp/$who.unsorted"
-        sort "$tmp/$who.unsorted" >"$tmp/$who.expected"
         actual_customer "$id" "$valid_to" >"$tmp/$who.unsorted"
         sort "$tmp/$who.unsorted" >"$tmp/$who.actual"
+    done
+}
+
+# check_reveal: the saved rows of both customers hold what the counts file's reveal says.
+check_reveal() {
+    for who in mover deleted; do
+        reveal_block "$who"
+        name=$(get "$block.name")
+        expect_customer "$block" >"$tmp/$who.unsorted"
+        sort "$tmp/$who.unsorted" >"$tmp/$who.expected"
         history_rows=$(grep -c '^history|' "$tmp/$who.actual" || true)
         bridge_rows=$(grep -c '^bridge_act|' "$tmp/$who.actual" || true)
         [ "$history_rows" = "$(get "$block.history.rows")" ] \
@@ -195,8 +220,60 @@ assert_reveal() {
         diff -u "$tmp/$who.expected" "$tmp/$who.actual" \
             || die "the warehouse rows of $name differ from the reveal in $counts_name"
         sed 's/^/  /' "$tmp/$who.actual"
-        echo "ok: $name: $history_rows history rows and $bridge_rows bridge_act rows, as the reveal says ($valid_to)"
+        echo "ok: $name: $history_rows history rows and $bridge_rows bridge_act rows, as the reveal says"
     done
+}
+
+# with_counts FILE FUNCTION ARGS...: run FUNCTION in a subshell that reads FILE as the
+# counts file, so a failing assertion ends the subshell and not this script.
+with_counts() {
+    (
+        counts=$1
+        counts_name=$1
+        shift
+        "$@"
+    )
+}
+
+# must_fail WHAT TEXT COMMAND...: a negative control. COMMAND must fail, and its output must
+# hold TEXT, so it fails for the reason the control is about and not for another.
+must_fail() {
+    what=$1
+    text=$2
+    shift 2
+    if "$@" >"$tmp/control.out" 2>&1; then
+        sed 's/^/  | /' "$tmp/control.out"
+        die "negative control: $what passed; the assertion it tests cannot fail"
+    fi
+    if ! grep -qF -- "$text" "$tmp/control.out"; then
+        sed 's/^/  | /' "$tmp/control.out"
+        die "negative control: $what failed, but not with: $text"
+    fi
+    grep -F -- "$text" "$tmp/control.out" | sed 's/^/  | /'
+    echo "ok: negative control: $what fails, as it must"
+}
+
+# perturb NAME SED-SCRIPT FILE: a copy of FILE in $tmp/NAME with SED-SCRIPT applied, which
+# must change it; prints the copy's path.
+perturb() {
+    mkdir -p "$tmp/$1"
+    out=$tmp/$1/$(basename "$3")
+    sed "$2" "$3" >"$out"
+    if cmp -s "$3" "$out"; then
+        die "negative control $1: the change to $(basename "$3") changed nothing"
+    fi
+    printf '%s\n' "$out"
+}
+
+# pin_control NAME SED-SCRIPT: check-image-pin.sh must reject a .env.example changed by
+# SED-SCRIPT, beside an unchanged project/IMAGE.
+pin_control() {
+    env_copy=$(perturb "pin-$1" "$2" "$jaffle/.env.example")
+    mkdir -p "$tmp/pin-$1/project"
+    cp "$jaffle/project/IMAGE" "$tmp/pin-$1/project/IMAGE"
+    must_fail "check-image-pin.sh with the $1 of .env.example changed" \
+        "differs from project/IMAGE's image, tag and digest" \
+        sh "$here/check-image-pin.sh" "$(dirname "$env_copy")"
 }
 
 # project_resources: the ids of every container, volume and network of the project.
@@ -270,6 +347,23 @@ from_run2=$(sed -n "s/^DELETE FROM sales\.$reveal_object WHERE $key = '\([0-9a-f
     || die "db/run2.sql deletes the $reveal_object '$from_run2', the counts file names '$deleted'"
 echo "ok: db/run2.sql deletes $deleted, the deleted customer of the reveal"
 
+for line in "$sync_url_line" "$sync_line"; do
+    grep -qxF -- "$line" "$jaffle/steps/04-run1.sh" \
+        || die "steps/04-run1.sh no longer holds the line: $line; Review Focus 4 would test a command no reader runs"
+done
+echo "ok: the sync of Review Focus 4 is the one steps/04-run1.sh runs"
+
+say "negative controls: the image pin"
+pin_digest=$(sed -n 's/^AGENT_IMAGE_DIGEST=sha256://p' "$jaffle/project/IMAGE")
+case $pin_digest in
+    *0) other_digest=${pin_digest%?}1 ;;
+    *) other_digest=${pin_digest%?}0 ;;
+esac
+pin_tag=$(sed -n 's/^AGENT_IMAGE_TAG=//p' "$jaffle/project/IMAGE")
+pin_tag_re=$(printf '%s\n' "$pin_tag" | sed 's/[.]/\\./g')
+pin_control digest "s/^\(AGENT_IMAGE=.*@sha256:\)$pin_digest\$/\1$other_digest/"
+pin_control tag "s/^\(AGENT_IMAGE=[^@]*:\)$pin_tag_re@/\1${pin_tag}9@/"
+
 say "checking that nothing of the compose project $project exists yet"
 leftover=$(project_resources)
 [ -z "$leftover" ] || die "the compose project $project already has containers, volumes or networks; they are not this run's, so it stops"
@@ -301,12 +395,12 @@ assert_counts run1 "$tmp/run1.counts"
 
 # --- Review Focus 3: the reader runs run 1's sync again ----------------------------------------
 
-say "Review Focus 3: run 1's sync again, on the unchanged source"
-with_lib "$sync_cmd"
+say "Review Focus 3: the reader runs step 4 again, on the unchanged source"
+run_step 04-run1.sh
 snapshot >"$tmp/repeat.counts"
 diff -u "$tmp/run1.counts" "$tmp/repeat.counts" \
-    || die "a second sync on the unchanged source changed the counts"
-echo "ok: the second sync left all 28 counts unchanged"
+    || die "step 4 run again on the unchanged source changed the counts"
+echo "ok: step 4 run again left all 28 counts unchanged"
 
 # --- Review Focus 4: a DuckDB shell holds the file open -----------------------------------------
 
@@ -339,7 +433,25 @@ snapshot >"$tmp/run2.counts"
 assert_counts run2 "$tmp/run2.counts"
 
 say "asserting the history reveal"
-assert_reveal
+capture_reveal
+check_reveal
+
+# --- Negative controls on the rows run 2 just passed --------------------------------------------
+
+say "negative controls: the count and reveal assertions on run 2's saved rows"
+# One count: customers' history, with its bridge_hst mirror, so counts.py still accepts the
+# file and only the comparison with the warehouse can object.
+count_copy=$(perturb counts \
+    '/^  run2:/,/^$/{/^    history: /s/customers: \([0-9]*\)/customers: 1\1/;/^    bridge_hst: /s/customers: \([0-9]*\)/customers: 1\1/;}' \
+    "$counts")
+python3 "$jaffle/expected/counts.py" validate "$count_copy" >/dev/null
+must_fail "the run 2 counts with customers' history changed" "2 of 28 warehouse counts differ" \
+    with_counts "$count_copy" assert_counts run2 "$tmp/run2.counts"
+# One city: the mover's closed version, the address she lived at before.
+city_copy=$(perturb city '/^  before: /s/city: "[^"]*"/city: "Pittsburgh"/' "$counts")
+python3 "$jaffle/expected/counts.py" validate "$city_copy" >/dev/null
+must_fail "the reveal with the mover's closed-row city changed" "differ from the reveal" \
+    with_counts "$city_copy" check_reveal
 
 # --- Review Focus 3: the documented reset returns to step 1 ------------------------------------
 
