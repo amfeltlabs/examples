@@ -67,7 +67,7 @@ jobs:
 plugins:
   source:
     - plugin: postgres
-      version: 4.8.0
+      version: 4.9.1
       registry: local
   target:
     - plugin: duckdb
