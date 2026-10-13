@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   automerge:
-    uses: infusal/github-actions/.github/workflows/dependabot-automerge.yaml@main
+    uses: amfeltlabs/github-actions/.github/workflows/dependabot-automerge.yaml@main
     with:
       tier: full-auto
       deployable: false
