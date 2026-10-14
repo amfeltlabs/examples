@@ -8,8 +8,10 @@ A tag `jaffle/vX.Y.Z` publishes a GitHub release of this repository with two ass
   `VERSION` stay in the repository; the asset is what consumers load.
 - `jaffle-vX.Y.Z.tar.gz.sha256`, one line in the standard `<hex>  <name>` format.
 
-A tag ending in `-rc.N` makes a prerelease. No release is marked "latest": the repository will hold
-other corpora, each tagged on its own, so consumers pin an explicit tag and its SHA-256.
+A tag ending in `-rc.N` makes a prerelease. The workflow does not mark a release "latest"
+(`--latest=false`): the repository will hold other corpora, each tagged on its own. GitHub still
+shows one release as Latest, never a prerelease or draft, in its API (`releases/latest`) and on the
+releases page. Consumers therefore pin an explicit tag and its SHA-256 and never resolve "latest".
 
 ## Versioning
 
@@ -30,7 +32,8 @@ version without `v` or `-rc.N`.
 
 3. The `release-jaffle` workflow refuses the tag unless its commit is on `main` and its version
    matches `VERSION`. It then runs the CI jobs on the tag (lint, commitlint, reproduce, addresses,
-   load and asset), builds the asset and creates the release. A failing check publishes nothing.
+   load, asset, project and tutorial), builds the asset and creates the release. A failing check
+   publishes nothing.
 4. Verify the release:
 
    ```bash
