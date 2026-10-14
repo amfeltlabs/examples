@@ -17,7 +17,7 @@ Neither file holds a login: the source URL, with its user and password, is passe
 
 ## Plugin versions
 
-`IMAGE` pins the agent image this project was produced with, by tag and registry digest, and the plugin versions baked into it. Only the PostgreSQL plugin's version is recorded in `amfelt.yaml`: `import` wrote 4.8.0, the version the image holds, and the agent runs offline only with a recorded version the image has installed, so an image with another PostgreSQL plugin needs this project updated, or produced again, with it. The DuckDB plugin's version is not recorded, so it is whatever the image installs. CI checks the recorded version against `IMAGE`.
+`IMAGE` pins the agent image this project was produced with, by tag and registry digest, and the plugin versions baked into it. Only the PostgreSQL plugin's version is recorded in `amfelt.yaml`: it is 4.9.1, the version the pinned image holds, updated by hand with each image pin, and the agent runs offline only with a recorded version the image has installed, so an image with another PostgreSQL plugin needs this project updated, or produced again, with it. The DuckDB plugin's version is not recorded, so it is whatever the image installs. CI checks the recorded version against `IMAGE`.
 
 ## Notes for running it
 
