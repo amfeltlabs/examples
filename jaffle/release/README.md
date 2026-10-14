@@ -34,7 +34,7 @@ version without `v` or `-rc.N`.
 4. Verify the release:
 
    ```bash
-   gh release download jaffle/v1.0.0-rc.1 --repo infusal/examples --pattern 'jaffle-v*'
+   gh release download jaffle/v1.0.0-rc.1 --repo amfeltlabs/examples --pattern 'jaffle-v*'
    sha256sum -c jaffle-v1.0.0-rc.1.tar.gz.sha256   # macOS: shasum -a 256 -c ...
    tar -xzf jaffle-v1.0.0-rc.1.tar.gz
    (cd jaffle/data && sha256sum -c ../SHA256SUMS)  # macOS: shasum -a 256 -c ../SHA256SUMS
