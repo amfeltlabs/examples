@@ -11,7 +11,8 @@
 #   - before step 1, that the pinned image is what project/IMAGE says it is: its
 #     `amfelt version` is AGENT_VERSION, and it bakes exactly one source-postgres and one
 #     target-duckdb version, SOURCE_POSTGRES_VERSION and TARGET_DUCKDB_VERSION. Docker
-#     ignores the tag where a digest is present, so nothing else binds those labels;
+#     ignores the tag where a digest is present, so nothing else binds those labels. The
+#     4.x images of earlier release tags have `infusal-agent version` in its place;
 #   - after steps 4 and 6, every warehouse count of that run in expected/counts.yaml, and
 #     after step 6 the history reveal: the rows of the mover and of the deleted customer
 #     in the history table and in the bridge view of open versions;
@@ -26,10 +27,13 @@
 #
 # Negative controls prove the assertions can fail. Before the tutorial starts,
 # check-image-pin.sh must reject a .env.example whose digest, and one whose tag, differs
-# from project/IMAGE, and the image check must reject a project/IMAGE whose AGENT_VERSION,
-# or whose TARGET_DUCKDB_VERSION, the image does not match. After run 2, the count and reveal assertions are run again on the
-# rows they just passed, against a copy of the counts file with one count, and one city
-# of the reveal, changed; each must fail, for that reason. Without a second engine run.
+# from project/IMAGE. The image check must reject a project/IMAGE whose AGENT_VERSION,
+# SOURCE_POSTGRES_VERSION or TARGET_DUCKDB_VERSION the image does not match, and canned
+# probe output with each near miss: a version that is a prefix of the wanted one or has it
+# as its prefix, two baked plugin versions, none, or the version line of another binary.
+# After run 2, the count and reveal assertions are run again on the rows they just passed,
+# against a copy of the counts file with one count, and one city of the reveal, changed;
+# each must fail, for that reason. Without a second engine run.
 #
 # JAFFLE_DIR is the jaffle/ directory whose steps, data and expected counts are tested; it
 # defaults to the one this script sits in. CI passes the tree of the ref it tests, so this
@@ -309,51 +313,165 @@ image_value() {
     sed -n "s/^$2=//p" "$1"
 }
 
-# check_image_contents IMAGE-FILE: run the image IMAGE-FILE pins, and check that it is the
-# version it says: `amfelt version` equals AGENT_VERSION, and the one source-postgres and
-# the one target-duckdb version under /opt/amfelt/plugins equal v$SOURCE_POSTGRES_VERSION
-# and v$TARGET_DUCKDB_VERSION. Prints ok: lines, or error: lines and fails.
-check_image_contents() {
-    f=$1
-    ref=$(image_value "$f" AGENT_IMAGE):$(image_value "$f" AGENT_IMAGE_TAG)@$(image_value "$f" AGENT_IMAGE_DIGEST) || return 1
-    want_agent=$(image_value "$f" AGENT_VERSION) || return 1
-    want_pg=v$(image_value "$f" SOURCE_POSTGRES_VERSION) || return 1
-    want_duck=v$(image_value "$f" TARGET_DUCKDB_VERSION) || return 1
-    docker run --rm --entrypoint sh "$ref" -c '
-        echo "agent=$(amfelt version)"
-        for v in /opt/amfelt/plugins/source/amfelt/postgres/*; do echo "pg=${v##*/}"; done
-        for v in /opt/amfelt/plugins/target/amfelt/duckdb/*; do echo "duck=${v##*/}"; done
-    ' >"$tmp/image.out" || { echo "error: cannot run $ref" >&2; return 1; }
-    got_agent=$(sed -n 's/^agent=amfelt \([^ ]*\) .*/\1/p' "$tmp/image.out")
-    got_pg=$(sed -n 's/^pg=//p' "$tmp/image.out" | tr '\n' ' ')
-    got_duck=$(sed -n 's/^duck=//p' "$tmp/image.out" | tr '\n' ' ')
+# check_probe FILE REF AGENT PG DUCK: check the probe output FILE of the image REF, as
+# check_image_contents writes it: the agent binary it found (bin=), that binary's version
+# line (agent=), and one pg= and one duck= line per baked plugin version, or the glob
+# itself where none is. The version line must start with the binary's own name, then
+# AGENT; the plugins must be PG only and DUCK only. Prints ok: lines, or error: lines and
+# fails.
+check_probe() {
+    probe=$1 probe_ref=$2 want_agent=$3 want_pg=$4 want_duck=$5
+    bin=$(sed -n 's/^bin=//p' "$probe")
+    agent_lines=$(grep -c '^agent=' "$probe" || true)
+    agent_line=$(sed -n 's/^agent=//p' "$probe")
+    got_name=${agent_line%% *}
+    got_agent=${agent_line#"$got_name"}
+    got_agent=${got_agent# }
+    got_agent=${got_agent%% *}
+    got_pg=$(sed -n 's/^pg=//p' "$probe" | tr '\n' ' ')
+    got_duck=$(sed -n 's/^duck=//p' "$probe" | tr '\n' ' ')
     bad=0
-    if [ "$got_agent" = "$want_agent" ]; then
-        echo "ok: $ref reports amfelt version $got_agent, AGENT_VERSION"
-    else
-        echo "error: $ref reports amfelt version '$got_agent', project/IMAGE's AGENT_VERSION is $want_agent" >&2
-        bad=1
-    fi
+    case $bin in
+        amfelt | infusal-agent)
+            if [ "$agent_lines" -ne 1 ] || [ "$got_name" != "$bin" ]; then
+                echo "error: $probe_ref's \`$bin version\` prints '$agent_line', not one line that starts with $bin" >&2
+                bad=1
+            elif [ "$got_agent" = "$want_agent" ]; then
+                echo "ok: $probe_ref reports $bin version $got_agent, AGENT_VERSION"
+            else
+                echo "error: $probe_ref reports $bin version '$got_agent', project/IMAGE's AGENT_VERSION is $want_agent" >&2
+                bad=1
+            fi
+            ;;
+        *)
+            echo "error: $probe_ref has neither amfelt nor infusal-agent on its PATH" >&2
+            bad=1
+            ;;
+    esac
     if [ "$got_pg" = "$want_pg " ]; then
         echo "ok: the image bakes source-postgres $want_pg only, SOURCE_POSTGRES_VERSION"
     else
-        echo "error: the image bakes source-postgres '$got_pg', project/IMAGE's SOURCE_POSTGRES_VERSION is $want_pg" >&2
+        echo "error: the image bakes source-postgres '${got_pg% }', project/IMAGE's SOURCE_POSTGRES_VERSION is $want_pg" >&2
         bad=1
     fi
     if [ "$got_duck" = "$want_duck " ]; then
         echo "ok: the image bakes target-duckdb $want_duck only, TARGET_DUCKDB_VERSION"
     else
-        echo "error: the image bakes target-duckdb '$got_duck', project/IMAGE's TARGET_DUCKDB_VERSION is $want_duck" >&2
+        echo "error: the image bakes target-duckdb '${got_duck% }', project/IMAGE's TARGET_DUCKDB_VERSION is $want_duck" >&2
         bad=1
     fi
     return "$bad"
 }
 
+# check_image_contents IMAGE-FILE: run the image IMAGE-FILE pins, probe its agent binary
+# (amfelt, or infusal-agent in the 4.x images of earlier release tags) and the plugin
+# versions under /opt/amfelt/plugins, and check them with check_probe against
+# AGENT_VERSION, v$SOURCE_POSTGRES_VERSION and v$TARGET_DUCKDB_VERSION.
+check_image_contents() {
+    f=$1
+    image=$(image_value "$f" AGENT_IMAGE) || return 1
+    image_tag=$(image_value "$f" AGENT_IMAGE_TAG) || return 1
+    image_digest=$(image_value "$f" AGENT_IMAGE_DIGEST) || return 1
+    ref=$image:$image_tag@$image_digest
+    want_agent=$(image_value "$f" AGENT_VERSION) || return 1
+    want_pg=v$(image_value "$f" SOURCE_POSTGRES_VERSION) || return 1
+    want_duck=v$(image_value "$f" TARGET_DUCKDB_VERSION) || return 1
+    docker run --rm --entrypoint sh "$ref" -c '
+        for b in amfelt infusal-agent; do
+            if command -v "$b" >/dev/null 2>&1; then
+                echo "bin=$b"
+                echo "agent=$("$b" version)"
+                break
+            fi
+        done
+        for v in /opt/amfelt/plugins/source/amfelt/postgres/*; do echo "pg=${v##*/}"; done
+        for v in /opt/amfelt/plugins/target/amfelt/duckdb/*; do echo "duck=${v##*/}"; done
+    ' >"$tmp/image.out" || { echo "error: cannot run $ref" >&2; return 1; }
+    check_probe "$tmp/image.out" "$ref" "$want_agent" "$want_pg" "$want_duck"
+}
+
+# one_error WHAT: the control's output, $tmp/control.out, holds exactly one error: line,
+# so the control WHAT failed for its own reason only.
+one_error() {
+    errors=$(grep -c '^error:' "$tmp/control.out" || true)
+    [ "$errors" -eq 1 ] || die "negative control: $1 failed with $errors error lines, not one"
+}
+
 # image_control NAME WHAT SED-SCRIPT TEXT: check_image_contents must reject project/IMAGE
-# changed by SED-SCRIPT, with an error holding TEXT. WHAT says what changed.
+# changed by SED-SCRIPT, with one error, holding TEXT. WHAT says what changed.
 image_control() {
     image_copy=$(perturb "image-$1" "$3" "$jaffle/project/IMAGE")
     must_fail "the image check with $2 in project/IMAGE" "$4" check_image_contents "$image_copy"
+    one_error "the image check with $2 in project/IMAGE"
+}
+
+# The canned probe output of a 5.x image that check_probe accepts for agent 5.0.7,
+# source-postgres v4.9.1 and target-duckdb v2.12.1; each probe control changes one part.
+probe_bin='bin=amfelt'
+probe_agent='agent=amfelt 5.0.7 linux/arm64 BuildDate=2026-10-14T11:45:36Z Commit=7e33ba8'
+probe_pg='pg=v4.9.1'
+probe_duck='duck=v2.12.1'
+
+# probe_control WHAT TEXT AGENT PG DUCK LINE...: check_probe must reject the canned probe
+# output LINE... against AGENT, PG and DUCK, with one error, holding TEXT.
+probe_control() {
+    pc_what="the image check on canned probe output with $1"
+    pc_text=$2 pc_agent=$3 pc_pg=$4 pc_duck=$5
+    shift 5
+    printf '%s\n' "$@" >"$tmp/probe.out"
+    must_fail "$pc_what" "$pc_text" check_probe "$tmp/probe.out" canned "$pc_agent" "$pc_pg" "$pc_duck"
+    one_error "$pc_what"
+}
+
+# probe_controls: check_probe must accept the canned probe output of a 5.x and of a 4.x
+# image, and reject each near miss of it: a version that is a prefix of the wanted one, or
+# has it as its prefix; two baked plugin versions, one of them the wanted one; no baked
+# version, where the glob is echoed; and a version line of another binary, or none.
+probe_controls() {
+    printf '%s\n' "$probe_bin" "$probe_agent" "$probe_pg" "$probe_duck" >"$tmp/probe.out"
+    check_probe "$tmp/probe.out" canned 5.0.7 v4.9.1 v2.12.1 >/dev/null \
+        || die "the image check rejects the canned probe output of a 5.x image"
+    printf '%s\n' bin=infusal-agent "agent=infusal-agent 4.28.0 linux/arm64 BuildDate=x Commit=y" \
+        "$probe_pg" "$probe_duck" >"$tmp/probe.out"
+    check_probe "$tmp/probe.out" canned 4.28.0 v4.9.1 v2.12.1 >/dev/null \
+        || die "the image check rejects the canned probe output of a 4.x image"
+    echo "ok: the image check accepts the canned probe output of a 5.x and of a 4.x image"
+    probe_control "agent 5.0.70 for 5.0.7" \
+        "reports amfelt version '5.0.70', project/IMAGE's AGENT_VERSION is 5.0.7" 5.0.7 v4.9.1 v2.12.1 \
+        "$probe_bin" "agent=amfelt 5.0.70 linux/arm64" "$probe_pg" "$probe_duck"
+    probe_control "agent 5.0.7 for 5.0.70" \
+        "reports amfelt version '5.0.7', project/IMAGE's AGENT_VERSION is 5.0.70" 5.0.70 v4.9.1 v2.12.1 \
+        "$probe_bin" "$probe_agent" "$probe_pg" "$probe_duck"
+    probe_control "source-postgres v4.9.10 for v4.9.1" \
+        "source-postgres 'v4.9.10', project/IMAGE's SOURCE_POSTGRES_VERSION is v4.9.1" 5.0.7 v4.9.1 v2.12.1 \
+        "$probe_bin" "$probe_agent" pg=v4.9.10 "$probe_duck"
+    probe_control "source-postgres v4.9.1 for v4.9.10" \
+        "source-postgres 'v4.9.1', project/IMAGE's SOURCE_POSTGRES_VERSION is v4.9.10" 5.0.7 v4.9.10 v2.12.1 \
+        "$probe_bin" "$probe_agent" "$probe_pg" "$probe_duck"
+    probe_control "target-duckdb v2.12.10 for v2.12.1" \
+        "target-duckdb 'v2.12.10', project/IMAGE's TARGET_DUCKDB_VERSION is v2.12.1" 5.0.7 v4.9.1 v2.12.1 \
+        "$probe_bin" "$probe_agent" "$probe_pg" duck=v2.12.10
+    probe_control "target-duckdb v2.12.1 for v2.12.10" \
+        "target-duckdb 'v2.12.1', project/IMAGE's TARGET_DUCKDB_VERSION is v2.12.10" 5.0.7 v4.9.1 v2.12.10 \
+        "$probe_bin" "$probe_agent" "$probe_pg" "$probe_duck"
+    probe_control "two source-postgres versions" \
+        "source-postgres 'v4.9.0 v4.9.1', project/IMAGE's SOURCE_POSTGRES_VERSION is v4.9.1" 5.0.7 v4.9.1 v2.12.1 \
+        "$probe_bin" "$probe_agent" pg=v4.9.0 "$probe_pg" "$probe_duck"
+    probe_control "two target-duckdb versions" \
+        "target-duckdb 'v2.12.1 v2.12.2', project/IMAGE's TARGET_DUCKDB_VERSION is v2.12.1" 5.0.7 v4.9.1 v2.12.1 \
+        "$probe_bin" "$probe_agent" "$probe_pg" "$probe_duck" duck=v2.12.2
+    probe_control "no source-postgres version" \
+        "source-postgres '*', project/IMAGE's SOURCE_POSTGRES_VERSION is v4.9.1" 5.0.7 v4.9.1 v2.12.1 \
+        "$probe_bin" "$probe_agent" 'pg=*' "$probe_duck"
+    probe_control "no target-duckdb version" \
+        "target-duckdb '*', project/IMAGE's TARGET_DUCKDB_VERSION is v2.12.1" 5.0.7 v4.9.1 v2.12.1 \
+        "$probe_bin" "$probe_agent" "$probe_pg" 'duck=*'
+    probe_control "the version line of another binary" \
+        "prints 'infusal-agent 5.0.7 linux/arm64', not one line that starts with amfelt" 5.0.7 v4.9.1 v2.12.1 \
+        "$probe_bin" "agent=infusal-agent 5.0.7 linux/arm64" "$probe_pg" "$probe_duck"
+    probe_control "no agent binary" \
+        "has neither amfelt nor infusal-agent on its PATH" 5.0.7 v4.9.1 v2.12.1 \
+        "$probe_pg" "$probe_duck"
 }
 
 # rows_control NAME WHAT WHO SED-SCRIPT: check_reveal must reject the saved rows with
@@ -481,9 +599,13 @@ pin_controls
 say "checking that the pinned image is the version project/IMAGE says"
 check_image_contents "$jaffle/project/IMAGE" || die "the pinned image is not what project/IMAGE says it is"
 say "negative controls: the image's versions"
-image_control agent "the agent version changed" 's/^AGENT_VERSION=.*/AGENT_VERSION=0.0.0/' "reports amfelt version"
-image_control duckdb "the DuckDB plugin version changed" 's/^TARGET_DUCKDB_VERSION=.*/TARGET_DUCKDB_VERSION=0.0.0/' "bakes target-duckdb"
-image_control postgres "the PostgreSQL plugin version changed" 's/^SOURCE_POSTGRES_VERSION=.*/SOURCE_POSTGRES_VERSION=0.0.0/' "bakes source-postgres"
+probe_controls
+image_control agent "the agent version changed" 's/^AGENT_VERSION=.*/AGENT_VERSION=0.0.0/' \
+    "project/IMAGE's AGENT_VERSION is 0.0.0"
+image_control postgres "the PostgreSQL plugin version changed" \
+    's/^SOURCE_POSTGRES_VERSION=.*/SOURCE_POSTGRES_VERSION=0.0.0/' "project/IMAGE's SOURCE_POSTGRES_VERSION is v0.0.0"
+image_control duckdb "the DuckDB plugin version changed" \
+    's/^TARGET_DUCKDB_VERSION=.*/TARGET_DUCKDB_VERSION=0.0.0/' "project/IMAGE's TARGET_DUCKDB_VERSION is v0.0.0"
 
 say "checking that nothing of the compose project $project exists yet"
 leftover=$(project_resources)
