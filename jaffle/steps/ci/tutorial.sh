@@ -30,10 +30,11 @@
 # from project/IMAGE. The image check must reject a project/IMAGE whose AGENT_VERSION,
 # SOURCE_POSTGRES_VERSION or TARGET_DUCKDB_VERSION the image does not match, and canned
 # probe output with each near miss: a version that is a prefix of the wanted one or has it
-# as its prefix, two baked plugin versions, none, or the version line of another binary.
-# After run 2, the count and reveal assertions are run again on the rows they just passed,
-# against a copy of the counts file with one count, and one city of the reveal, changed;
-# each must fail, for that reason. Without a second engine run.
+# as its prefix, two baked plugin versions with the wanted one first or last, none, two
+# agent version lines, or the version line of another binary or of none. After run 2, the
+# count and reveal assertions are run again on the rows they just passed, against a copy of
+# the counts file with one count, and one city of the reveal, changed; each must fail, for
+# that reason. Without a second engine run.
 #
 # JAFFLE_DIR is the jaffle/ directory whose steps, data and expected counts are tested; it
 # defaults to the one this script sits in. CI passes the tree of the ref it tests, so this
@@ -318,12 +319,13 @@ image_value() {
 # line (agent=), and one pg= and one duck= line per baked plugin version, or the glob
 # itself where none is. The version line must start with the binary's own name, then
 # AGENT; the plugins must be PG only and DUCK only. Prints ok: lines, or error: lines and
-# fails.
+# fails. An error quotes the agent= lines space-joined, so it stays one line.
 check_probe() {
     probe=$1 probe_ref=$2 want_agent=$3 want_pg=$4 want_duck=$5
     bin=$(sed -n 's/^bin=//p' "$probe")
     agent_lines=$(grep -c '^agent=' "$probe" || true)
-    agent_line=$(sed -n 's/^agent=//p' "$probe")
+    agent_line=$(sed -n 's/^agent=//p' "$probe" | tr '\n' ' ')
+    agent_line=${agent_line% }
     got_name=${agent_line%% *}
     got_agent=${agent_line#"$got_name"}
     got_agent=${got_agent# }
@@ -425,8 +427,10 @@ probe_control() {
 
 # probe_controls: check_probe must accept the canned probe output of a 5.x and of a 4.x
 # image, and reject each near miss of it: a version that is a prefix of the wanted one, or
-# has it as its prefix; two baked plugin versions, one of them the wanted one; no baked
-# version, where the glob is echoed; and a version line of another binary, or none.
+# has it as its prefix; two baked plugin versions, the wanted one first or last, so that a
+# comparison of the first or of the last alone fails either way; no baked version, where
+# the glob is echoed; two agent version lines; and a version line of another binary, or
+# none.
 probe_controls() {
     printf '%s\n' "$probe_bin" "$probe_agent" "$probe_pg" "$probe_duck" >"$tmp/probe.out"
     check_probe "$tmp/probe.out" canned 5.0.7 v4.9.1 v2.12.1 >/dev/null \
@@ -457,9 +461,15 @@ probe_controls() {
     probe_control "two source-postgres versions" \
         "source-postgres 'v4.9.0 v4.9.1', project/IMAGE's SOURCE_POSTGRES_VERSION is v4.9.1" 5.0.7 v4.9.1 v2.12.1 \
         "$probe_bin" "$probe_agent" pg=v4.9.0 "$probe_pg" "$probe_duck"
+    probe_control "two source-postgres versions, the wanted one first" \
+        "source-postgres 'v4.9.1 v4.9.2', project/IMAGE's SOURCE_POSTGRES_VERSION is v4.9.1" 5.0.7 v4.9.1 v2.12.1 \
+        "$probe_bin" "$probe_agent" "$probe_pg" pg=v4.9.2 "$probe_duck"
     probe_control "two target-duckdb versions" \
         "target-duckdb 'v2.12.1 v2.12.2', project/IMAGE's TARGET_DUCKDB_VERSION is v2.12.1" 5.0.7 v4.9.1 v2.12.1 \
         "$probe_bin" "$probe_agent" "$probe_pg" "$probe_duck" duck=v2.12.2
+    probe_control "two target-duckdb versions, the wanted one last" \
+        "target-duckdb 'v2.12.0 v2.12.1', project/IMAGE's TARGET_DUCKDB_VERSION is v2.12.1" 5.0.7 v4.9.1 v2.12.1 \
+        "$probe_bin" "$probe_agent" "$probe_pg" duck=v2.12.0 "$probe_duck"
     probe_control "no source-postgres version" \
         "source-postgres '*', project/IMAGE's SOURCE_POSTGRES_VERSION is v4.9.1" 5.0.7 v4.9.1 v2.12.1 \
         "$probe_bin" "$probe_agent" 'pg=*' "$probe_duck"
@@ -469,6 +479,10 @@ probe_controls() {
     probe_control "the version line of another binary" \
         "prints 'infusal-agent 5.0.7 linux/arm64', not one line that starts with amfelt" 5.0.7 v4.9.1 v2.12.1 \
         "$probe_bin" "agent=infusal-agent 5.0.7 linux/arm64" "$probe_pg" "$probe_duck"
+    probe_control "two agent version lines" \
+        "prints 'amfelt 5.0.7 linux/arm64 amfelt 5.0.7 linux/arm64', not one line that starts with amfelt" \
+        5.0.7 v4.9.1 v2.12.1 \
+        "$probe_bin" "agent=amfelt 5.0.7 linux/arm64" "agent=amfelt 5.0.7 linux/arm64" "$probe_pg" "$probe_duck"
     probe_control "no agent binary" \
         "has neither amfelt nor infusal-agent on its PATH" 5.0.7 v4.9.1 v2.12.1 \
         "$probe_pg" "$probe_duck"
