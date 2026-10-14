@@ -4,7 +4,7 @@ pmOnFail: ignore
 # Security floors for transitive packages. Dependabot raises a security update for a transitive
 # package only if it can resolve the patched version, and markdownlint-cli2 pins a range below
 # the patched one, so both updates failed in update_files ("security_update_not_possible",
-# latest-resolvable below lowest-non-vulnerable). An override is the lever, as in infusal/stack.
+# latest-resolvable below lowest-non-vulnerable). An override is the lever, as in amfeltlabs/stack.
 overrides:
   katex: ">=0.18.2" # markdownlint-cli2 via micromark-extension-math; resolved 0.16.47 was vulnerable
   smol-toml@1: ">=1.9.0 <2" # markdownlint-cli2; advisories patched at 1.9.0
