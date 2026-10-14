@@ -8,6 +8,10 @@
 # image .env.example pins. This script adds no step of its own to the tutorial; around
 # the steps it asserts, from its own queries:
 #
+#   - before step 1, that the pinned image is what project/IMAGE says it is: its
+#     `amfelt version` is AGENT_VERSION, and it bakes exactly one source-postgres and one
+#     target-duckdb version, SOURCE_POSTGRES_VERSION and TARGET_DUCKDB_VERSION. Docker
+#     ignores the tag where a digest is present, so nothing else binds those labels;
 #   - after steps 4 and 6, every warehouse count of that run in expected/counts.yaml, and
 #     after step 6 the history reveal: the rows of the mover and of the deleted customer
 #     in the history table and in the bridge view of open versions;
@@ -22,7 +26,8 @@
 #
 # Negative controls prove the assertions can fail. Before the tutorial starts,
 # check-image-pin.sh must reject a .env.example whose digest, and one whose tag, differs
-# from project/IMAGE. After run 2, the count and reveal assertions are run again on the
+# from project/IMAGE, and the image check must reject a project/IMAGE whose AGENT_VERSION,
+# or whose TARGET_DUCKDB_VERSION, the image does not match. After run 2, the count and reveal assertions are run again on the
 # rows they just passed, against a copy of the counts file with one count, and one city
 # of the reveal, changed; each must fail, for that reason. Without a second engine run.
 #
@@ -297,6 +302,60 @@ pin_controls() {
     pin_control tag "the tag changed" "s/^\(AGENT_IMAGE=[^@]*:\)$pin_tag_re@/\1${pin_tag}9@/"
 }
 
+# image_value FILE KEY: the value of the one KEY= line in the IMAGE file FILE.
+image_value() {
+    n=$(grep -c "^$2=" "$1" || true)
+    [ "$n" -eq 1 ] || { echo "error: $1 sets $2 on $n lines, not exactly one" >&2; return 1; }
+    sed -n "s/^$2=//p" "$1"
+}
+
+# check_image_contents IMAGE-FILE: run the image IMAGE-FILE pins, and check that it is the
+# version it says: `amfelt version` equals AGENT_VERSION, and the one source-postgres and
+# the one target-duckdb version under /opt/amfelt/plugins equal v$SOURCE_POSTGRES_VERSION
+# and v$TARGET_DUCKDB_VERSION. Prints ok: lines, or error: lines and fails.
+check_image_contents() {
+    f=$1
+    ref=$(image_value "$f" AGENT_IMAGE):$(image_value "$f" AGENT_IMAGE_TAG)@$(image_value "$f" AGENT_IMAGE_DIGEST) || return 1
+    want_agent=$(image_value "$f" AGENT_VERSION) || return 1
+    want_pg=v$(image_value "$f" SOURCE_POSTGRES_VERSION) || return 1
+    want_duck=v$(image_value "$f" TARGET_DUCKDB_VERSION) || return 1
+    docker run --rm --entrypoint sh "$ref" -c '
+        echo "agent=$(amfelt version)"
+        for v in /opt/amfelt/plugins/source/amfelt/postgres/*; do echo "pg=${v##*/}"; done
+        for v in /opt/amfelt/plugins/target/amfelt/duckdb/*; do echo "duck=${v##*/}"; done
+    ' >"$tmp/image.out" || { echo "error: cannot run $ref" >&2; return 1; }
+    got_agent=$(sed -n 's/^agent=amfelt \([^ ]*\) .*/\1/p' "$tmp/image.out")
+    got_pg=$(sed -n 's/^pg=//p' "$tmp/image.out" | tr '\n' ' ')
+    got_duck=$(sed -n 's/^duck=//p' "$tmp/image.out" | tr '\n' ' ')
+    bad=0
+    if [ "$got_agent" = "$want_agent" ]; then
+        echo "ok: $ref reports amfelt version $got_agent, AGENT_VERSION"
+    else
+        echo "error: $ref reports amfelt version '$got_agent', project/IMAGE's AGENT_VERSION is $want_agent" >&2
+        bad=1
+    fi
+    if [ "$got_pg" = "$want_pg " ]; then
+        echo "ok: the image bakes source-postgres $want_pg only, SOURCE_POSTGRES_VERSION"
+    else
+        echo "error: the image bakes source-postgres '$got_pg', project/IMAGE's SOURCE_POSTGRES_VERSION is $want_pg" >&2
+        bad=1
+    fi
+    if [ "$got_duck" = "$want_duck " ]; then
+        echo "ok: the image bakes target-duckdb $want_duck only, TARGET_DUCKDB_VERSION"
+    else
+        echo "error: the image bakes target-duckdb '$got_duck', project/IMAGE's TARGET_DUCKDB_VERSION is $want_duck" >&2
+        bad=1
+    fi
+    return "$bad"
+}
+
+# image_control NAME WHAT SED-SCRIPT TEXT: check_image_contents must reject project/IMAGE
+# changed by SED-SCRIPT, with an error holding TEXT. WHAT says what changed.
+image_control() {
+    image_copy=$(perturb "image-$1" "$3" "$jaffle/project/IMAGE")
+    must_fail "the image check with $2 in project/IMAGE" "$4" check_image_contents "$image_copy"
+}
+
 # rows_control NAME WHAT WHO SED-SCRIPT: check_reveal must reject the saved rows with
 # WHO's rows (mover or deleted) changed by SED-SCRIPT, as an engine defect would change
 # them. The expectation is untouched.
@@ -418,6 +477,13 @@ echo "ok: the sync of Review Focus 4 is the one steps/04-run1.sh runs"
 
 say "negative controls: the image pin"
 pin_controls
+
+say "checking that the pinned image is the version project/IMAGE says"
+check_image_contents "$jaffle/project/IMAGE" || die "the pinned image is not what project/IMAGE says it is"
+say "negative controls: the image's versions"
+image_control agent "the agent version changed" 's/^AGENT_VERSION=.*/AGENT_VERSION=0.0.0/' "reports amfelt version"
+image_control duckdb "the DuckDB plugin version changed" 's/^TARGET_DUCKDB_VERSION=.*/TARGET_DUCKDB_VERSION=0.0.0/' "bakes target-duckdb"
+image_control postgres "the PostgreSQL plugin version changed" 's/^SOURCE_POSTGRES_VERSION=.*/SOURCE_POSTGRES_VERSION=0.0.0/' "bakes source-postgres"
 
 say "checking that nothing of the compose project $project exists yet"
 leftover=$(project_resources)
