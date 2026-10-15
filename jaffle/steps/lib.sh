@@ -13,9 +13,23 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-# The agent's workspace is .amfelt in the directory it runs in, unless AMFELT_DIR names
-# another; the steps install the plugins in work/.amfelt, so it must name none.
-unset AMFELT_DIR
+# The agent's workspace, where it looks for installed plugins, is .amfelt in the directory
+# it runs in, unless one of these names another: --amfelt-dir, AMFELT_DIR, its pre-rename
+# fallback INFUSAL_DIR, or an infusal-dir key in the agent's settings file, config.yaml or
+# config.yml, in ~/.config/amfelt ($XDG_CONFIG_HOME/amfelt) or /etc/amfelt. The steps
+# install the plugins in work/.amfelt, so none of them may name another: the agent would
+# look for the plugins there, find none, try the plugin catalog, and stop with an error
+# about the catalog, "agent is not registered" or a failed lookup of api.amfelt.com,
+# that never names the directory. The two variables are unset here; a settings file the
+# steps cannot unset stops them with an error that names it.
+unset AMFELT_DIR INFUSAL_DIR
+for settings in "${XDG_CONFIG_HOME:-$HOME/.config}/amfelt/config.yaml" "${XDG_CONFIG_HOME:-$HOME/.config}/amfelt/config.yml" \
+        /etc/amfelt/config.yaml /etc/amfelt/config.yml; do
+    if [ -f "$settings" ] && grep -q -E '^[[:space:]]*infusal-dir[[:space:]]*:' "$settings"; then
+        echo "error: $settings sets infusal-dir, which moves the agent's workspace away from work/.amfelt, where the steps install the plugins; remove the key, or run the steps with XDG_CONFIG_HOME set to a folder without it" >&2
+        exit 1
+    fi
+done
 
 # The DuckDB container runs as you, so it can read the warehouse the agent wrote as you.
 HOST_UID=$(id -u)

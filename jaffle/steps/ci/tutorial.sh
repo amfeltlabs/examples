@@ -21,6 +21,10 @@
 #   - after steps 4 and 6, every warehouse count of that run in expected/counts.yaml, and
 #     after step 6 the history reveal: the rows of the mover and of the deleted customer
 #     in the history table and in the bridge view of open versions;
+#   - step 3 with the source published on another port than .env's: it passes, and the
+#     contract it wrote records that port, so step 3's mapping of the port onto the
+#     ready-made contract's was exercised; the source is then published on .env's port
+#     again and step 3 run once more before step 4;
 #   - a reader re-running step 4, run 1's sync included: the counts stay the same (plan
 #     Review Focus 3);
 #   - a reader leaving a DuckDB shell open: the sync fails, and its error output names the
@@ -665,6 +669,28 @@ install_control duckdb "the DuckDB plugin version changed" \
     's/^TARGET_DUCKDB_VERSION=.*/TARGET_DUCKDB_VERSION=0.0.0/' "project/IMAGE's TARGET_DUCKDB_VERSION is v0.0.0"
 
 run_step 03-configure.sh
+
+# --- Step 3 with the source on another port ----------------------------------------------------
+
+# SOURCE_PORT in .env is the one setting a reader changes, and the contract import writes
+# records the port it reached the source on, which step 3 maps onto the ready-made
+# contract's. So: publish the source on another port, run step 3 there, check that the
+# contract it wrote records that port (so the mapping was exercised, not skipped), then
+# publish the source on .env's port again and run step 3 once more, so step 4 starts from
+# what the default run leaves.
+other_port=25432
+say "step 3 with the source published on $other_port instead of .env's port"
+(cd "$jaffle" && SOURCE_PORT=$other_port docker compose up -d --wait source) \
+    || die "cannot publish the source on $other_port"
+published=$(cd "$jaffle" && docker compose port source 5432)
+[ "${published##*:}" = "$other_port" ] || die "the source publishes ${published##*:}, not $other_port"
+(export SOURCE_PORT=$other_port; run_step 03-configure.sh) || die "step 3 failed with the source on $other_port"
+grep -q "^    port: $other_port\$" "$jaffle/work/contracts/jaffle.odcs.yaml" \
+    || die "the contract step 3 wrote does not record port $other_port; the mapping was not exercised"
+echo "ok: step 3 passes with the source on $other_port, and its contract records that port"
+(cd "$jaffle" && docker compose up -d --wait source) || die "cannot publish the source on .env's port again"
+run_step 03-configure.sh
+
 run_step 04-run1.sh
 
 say "asserting run 1's counts"

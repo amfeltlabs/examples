@@ -468,8 +468,8 @@ servers:
   - server: source-postgres
     type: postgres
     database: jaffle
-    host: 127.0.0.1
-    port: 15432
+    host: source
+    port: 5432
     schema: catalog
     customProperties:
       - property: sslmode

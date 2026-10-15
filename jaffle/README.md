@@ -5,16 +5,17 @@ The Jaffle Shop dataset, and a hands-on tutorial that loads it with the Amfelt a
 ## What you need
 
 - The `amfelt` CLI 5.0.7 on your `PATH`, on macOS or Linux. See [Installing the CLI](#installing-the-cli).
+- The GitHub CLI, `gh`, signed in with read access to `amfeltlabs/agent` and `amfeltlabs/hub`, until the release channel exists: installing the CLI needs it, and so do steps 2 and 3, which install the plugins.
 - Docker with Docker Compose 2.22 or later, which runs the source database and a DuckDB shell.
 - `python3`, which the steps use to read the published expected results and to check your project against them.
 - About 550 MB of disk for the two images, the CLI and its two plugins, and a network connection to download them.
 
 ## Installing the CLI
 
-The CLI and its plugins will be published through the Amfelt release channel, with package managers for the CLI. Until that channel exists, both come from private GitHub releases, which only the Amfelt team can read. With the GitHub CLI, `gh`, signed in with read access to `amfeltlabs/agent` and `amfeltlabs/hub`:
+The CLI and its plugins will be published through the Amfelt release channel, with package managers for the CLI. Until that channel exists, both come from private GitHub releases, which only the Amfelt team can read. With `gh` signed in, install the CLI into `~/.local/bin`, or into any other folder on your `PATH`:
 
 ```bash
-sh steps/install-from-github.sh cli ~/.local/bin   # or any other folder on your PATH
+sh steps/install-from-github.sh cli ~/.local/bin
 amfelt version
 ```
 
@@ -27,13 +28,20 @@ an error when something is not as expected.
 
 ```bash
 cp .env.example .env
-steps/01-start.sh            # start the source database
-steps/02-discover.sh         # read the source into a data contract
-steps/03-configure.sh        # build the project; QUICK=1 copies the ready-made one
-steps/04-run1.sh             # create the layers, load, and count
-steps/05-change-source.sh    # change the source: a customer moves to Brooklyn
-steps/06-run2-reveal.sh      # load again, and see the history the warehouse kept
+steps/01-start.sh
+steps/02-discover.sh
+steps/03-configure.sh
+steps/04-run1.sh
+steps/05-change-source.sh
+steps/06-run2-reveal.sh
 ```
+
+1. `01-start.sh` starts the source database.
+2. `02-discover.sh` reads the source into a data contract.
+3. `03-configure.sh` builds the project; `QUICK=1 steps/03-configure.sh` copies the ready-made one instead.
+4. `04-run1.sh` creates the layers, loads, and counts.
+5. `05-change-source.sh` changes the source: a customer moves to Brooklyn.
+6. `06-run2-reveal.sh` loads again, and shows the history the warehouse kept.
 
 `steps/99-reset.sh` removes the containers, the source database and everything the steps wrote, the installed plugins included, so `steps/01-start.sh` starts over. It keeps the `amfelt` CLI.
 

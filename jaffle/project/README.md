@@ -13,7 +13,7 @@ Both files were produced by the agent's own commands, run in the project directo
 
 Two parts were written by hand: the `plugins` block, which declares the PostgreSQL and DuckDB plugins, each with its version, before `import` ran, and `select.objects`, which gives each table its table type and history mode, and orders and tweets their event-time column. CI checks that these settings, the job's layer and its schema prefix equal the `job` block of `../expected/counts.yaml`, the settings the expected counts were made for. `tweets` is typed `transaction`, not `event`: `event` is a value from before the table types were reduced to master, transaction and reference, and it is refused where a project is authored.
 
-Neither file holds a login: the source URL, with its user and password, is passed to `sync` on every run. The contract records the host and port `import` reached the source on, `127.0.0.1` and 15432; `sync` connects to the URL it is given, not to those.
+Neither file holds a login: the source URL, with its user and password, is passed to `sync` on every run. The contract records the host and port `import` reached the source on. In this ready-made contract they are `source` and 5432, the database's name and port on the container network, where the stack's capture reads it; on your machine, `import` records `127.0.0.1` and the port `SOURCE_PORT` publishes, and step 3 maps those onto `source` and 5432 when it compares your contract with this one. `sync` connects to the URL it is given, not to the host and port in the contract.
 
 ## Plugin versions
 

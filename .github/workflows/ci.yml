@@ -15,6 +15,15 @@ on:
         description: The ref to check out; empty checks out the triggering ref
         type: string
         default: ""
+    # The two secrets the tutorial job needs, and the only ones a caller passes: the org
+    # App whose token reads the agent and plugin releases.
+    secrets:
+      APP_ID:
+        description: The id of the org App that reads the agent and plugin releases
+        required: true
+      APP_PRIVATE_KEY:
+        description: The private key of that App
+        required: true
   # Runs every job against an existing ref, such as a release tag, with the workflow and
   # the tutorial job's assertions of the branch it is dispatched on:
   #   gh workflow run ci.yml --ref main -f ref=jaffle/v1.0.0

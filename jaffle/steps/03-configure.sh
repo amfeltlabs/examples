@@ -99,13 +99,16 @@ python3 check_project.py work/amfelt.yaml expected/counts.yaml project/IMAGE
 
 step "Checking that work/ holds the same project as project/"
 # Each new project and contract gets its own id and timestamps; everything else must match.
-# The contract also records the port import reached the source on: the one .env's
-# SOURCE_PORT publishes, which is 15432 in the ready-made contract.
+# The contract also records the host and port import reached the source on. Here that is
+# 127.0.0.1 and the port .env's SOURCE_PORT publishes; the ready-made contract records
+# source and 5432, the database's name and port on the container network, where the
+# stack's capture reads it. So the comparison maps this machine's values onto those.
 port=$(docker compose port source 5432) || fail "the source database publishes no port; run steps/01-start.sh first"
 port=${port##*:}
 same() {
     grep -v -E '^(id|createdAt|contractCreatedTs):|^  introspectedAt:' "$1" \
-        | sed "s/^    port: $port\$/    port: 15432/"
+        | sed -e 's/^    host: 127\.0\.0\.1$/    host: source/' \
+              -e "s/^    port: $port\$/    port: 5432/"
 }
 for file in amfelt.yaml contracts/jaffle.odcs.yaml; do
     same "project/$file" >work/.expected

@@ -64,14 +64,17 @@ jobs:
   # The same jobs the pull request required: lint, commitlint, reproduce, addresses, load,
   # asset, project and tutorial. A tag on a broken tree cannot publish. The tutorial job
   # pulls the private agent image, so the call grants it packages: read, and mints a token
-  # of the org App to install the CLI and plugins, so the call passes the secrets on.
+  # of the org App to install the CLI and plugins, so the call passes that App's two
+  # secrets, and no other.
   ci:
     needs: tag
     permissions:
       contents: read
       packages: read
     uses: ./.github/workflows/ci.yml
-    secrets: inherit
+    secrets:
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
     with:
       ref: ${{ needs.tag.outputs.sha }}
 

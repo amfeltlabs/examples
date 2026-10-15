@@ -73,20 +73,30 @@ fetch() {
     sha256_check "$5/$3.sha256" >/dev/null || fail "$3 does not match its checksum in $4"
 }
 
-# install_binary BINARY_NAME ARCHIVE_DIR TARGET NAME VERSION: extract BINARY_NAME from the one
-# archive in ARCHIVE_DIR to TARGET, and check it reports NAME VERSION.
+# install_binary BINARY_NAME ARCHIVE TARGET NAME VERSION: extract BINARY_NAME from ARCHIVE,
+# the one fetch verified, into ARCHIVE's directory, check that it reports NAME VERSION, and
+# only then put it at TARGET. A binary that reports anything else never reaches TARGET, and
+# what TARGET held stays as it was.
 install_binary() {
-    archive=$(find "$2" -name '*.tar.gz' | head -n 1)
-    tar -xzf "$archive" -C "$2" "$1"
+    dir=$(dirname "$2")
+    tar -xzf "$2" -C "$dir" "$1"
+    chmod 0755 "$dir/$1"
+    reports "$dir/$1" "$4" "$5" \
+        || fail "the $1 in $(basename "$2") reports '$(NO_COLOR=1 "$dir/$1" version 2>&1 | head -n 1)', not $4 $5; $3 is left as it was"
     mkdir -p "$(dirname "$3")"
-    rm -f "$3"
-    cp "$2/$1" "$3"
-    chmod 0755 "$3"
-    reports "$3" "$4" "$5" || fail "$3 does not report $4 $5"
+    if ! cp "$dir/$1" "$3.new" || ! mv -f "$3.new" "$3"; then
+        rm -f "$3.new"
+        fail "cannot write $3"
+    fi
     echo "Installed $4 $5 as $3"
 }
 
-command -v gh >/dev/null || fail "gh, the GitHub CLI, is not installed; until the release channel exists it downloads amfelt"
+case ${1:-} in
+    cli) downloads="the amfelt CLI" ;;
+    plugins) downloads="the plugins" ;;
+    *) downloads="the amfelt CLI and the plugins" ;;
+esac
+command -v gh >/dev/null || fail "gh, the GitHub CLI, is not installed; until the release channel exists it downloads $downloads"
 gh auth status >/dev/null 2>&1 || fail "gh is not signed in; run gh auth login"
 plat=$(platform)
 tmp=$(mktemp -d)
@@ -103,7 +113,7 @@ case ${1:-} in
             exit 0
         fi
         fetch amfeltlabs/agent "v$version" "amfelt_$plat.tar.gz" "amfelt_${version}_checksums.txt" "$tmp"
-        install_binary amfelt "$tmp" "$target" amfelt "$version"
+        install_binary amfelt "$tmp/amfelt_$plat.tar.gz" "$target" amfelt "$version"
         ;;
     plugins)
         [ $# -eq 3 ] || fail "usage: install-from-github.sh plugins PROJECT WORKSPACE"
@@ -133,7 +143,7 @@ for category in ("source", "target"):
             fi
             mkdir -p "$tmp/$binary"
             fetch amfeltlabs/hub "$binary-v$version" "${binary}_$plat.tar.gz" "connectors_${version}_checksums.txt" "$tmp/$binary"
-            install_binary "$binary" "$tmp/$binary" "$target" "$binary" "$version"
+            install_binary "$binary" "$tmp/$binary/${binary}_$plat.tar.gz" "$target" "$binary" "$version"
         done <"$tmp/plugins"
         ;;
     *)
