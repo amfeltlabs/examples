@@ -16,7 +16,7 @@ deleted=$(expected reveal.deleted.customer_id)
 
 step "Run 2: loading the changed source into the warehouse"
 url=$(source_url)
-docker compose run --rm agent sync --job load --source-url "$url" --level warn
+(cd work && amfelt sync --job load --source-url "$url" --level warn)
 
 step "Every version of Catherine Navarro and Jessica Lewis in the history layer"
 docker compose run --rm -T duckdb <<SQL

@@ -1,14 +1,23 @@
 #!/bin/sh
-# Step 1: start the source database, and make the folders the agent writes to.
+# Step 1: check that the amfelt CLI is installed, start the source database, and make the
+# folders the agent writes to.
 #
 # The source is PostgreSQL holding the Jaffle Shop in three schemas: sales, catalog and
 # marketing. Its first start loads the data; a later start finds it loaded. work/ will hold
-# your project and warehouse/ the DuckDB file the agent builds.
+# your project, and work/warehouse/ the DuckDB file the agent builds.
 set -eu
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 
-step "Checking for docker, Docker Compose 2.22 or later, and python3"
+step "Checking for the amfelt CLI, docker, Docker Compose 2.22 or later, and python3"
+command -v amfelt >/dev/null \
+    || fail "the amfelt CLI is not on your PATH; README.md says how to install it"
+amfelt version
+made_with=$(sed -n 's/^AGENT_VERSION=//p' project/IMAGE)
+case $(amfelt version 2>&1) in
+    "amfelt $made_with" | "amfelt $made_with "*) ;;
+    *) echo "warning: the published expected counts were made with amfelt $made_with; another version may count differently" >&2 ;;
+esac
 command -v docker >/dev/null || fail "docker is not installed"
 version=$(docker compose version --short 2>/dev/null) || fail "Docker Compose is not installed"
 major=$(echo "${version#v}" | cut -d. -f1)
@@ -22,11 +31,11 @@ python3 expected/counts.py validate >/dev/null 2>&1 \
 step "Making db/ and data/ readable by the database container"
 chmod -R a+rX db data
 
-step "Pulling the source, agent and DuckDB images that are not here yet"
+step "Pulling the source and DuckDB images that are not here yet"
 docker compose --progress "$SLOW_PROGRESS" --profile tools pull --policy missing
 
-step "Making work/ for your project and warehouse/ for the DuckDB file"
-mkdir -p work/warehouse warehouse
+step "Making work/ for your project and work/warehouse/ for the DuckDB file"
+mkdir -p work/warehouse
 
 step "Starting the source database and waiting until the Jaffle Shop is loaded"
 if ! docker compose --progress "$SLOW_PROGRESS" up -d --wait source; then

@@ -12,8 +12,9 @@ The project file passes when:
     select.objects equals that block's objects exactly: the same objects, and for each the
     same tableType, historyMode and eventTimeCol, with no other setting;
   - its PostgreSQL source plugin records the version IMAGE pins as SOURCE_POSTGRES_VERSION,
-    and its DuckDB target plugin records none or TARGET_DUCKDB_VERSION, both with registry
-    local, so the agent never looks for a plugin the image does not hold.
+    and its DuckDB target plugin the one IMAGE pins as TARGET_DUCKDB_VERSION, both with
+    registry local: the agent runs both itself, at the versions the steps install and the
+    expected counts were made with.
 
 IMAGE must hold exactly its six KEY=value lines, well formed. A change to the history
 modes therefore has to change counts.yaml, whose layer rules counts.py checks against the
@@ -336,10 +337,9 @@ def check(project, job, image):
             problems.append("plugins.source[postgres].version: IMAGE pins %r, the project records %r"
                             % (image.get("SOURCE_POSTGRES_VERSION"), source.get("version")))
         target = plugin(project, "target", "duckdb", problems)
-        if target is not None and "version" in target \
-                and target["version"] != image.get("TARGET_DUCKDB_VERSION"):
+        if target is not None and target.get("version") != image.get("TARGET_DUCKDB_VERSION"):
             problems.append("plugins.target[duckdb].version: IMAGE pins %r, the project records %r"
-                            % (image.get("TARGET_DUCKDB_VERSION"), target["version"]))
+                            % (image.get("TARGET_DUCKDB_VERSION"), target.get("version")))
     return problems
 
 

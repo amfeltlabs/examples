@@ -13,14 +13,14 @@ set -eu
 . "$(dirname "$0")/lib.sh"
 
 for layer in staging history bridge; do
-    step "Creating the $layer layer in warehouse/jaffle.duckdb"
-    docker compose run --rm agent deploy warehouse \
-        --contract contracts/jaffle.odcs.yaml --layer "$layer" --level warn
+    step "Creating the $layer layer in work/warehouse/jaffle.duckdb"
+    (cd work && amfelt deploy warehouse \
+        --contract contracts/jaffle.odcs.yaml --layer "$layer" --level warn)
 done
 
 step "Run 1: loading every table of the source into the warehouse"
 url=$(source_url)
-docker compose run --rm agent sync --job load --source-url "$url" --level warn
+(cd work && amfelt sync --job load --source-url "$url" --level warn)
 
 step "Counting the rows in every layer, beside the published expected counts"
 check_counts run1

@@ -11,24 +11,30 @@ set -eu
 
 step "Starting a scratch project in work/discover/"
 rm -rf work/discover
-docker compose run --rm agent init --name discover --path discover/amfelt.yaml --level warn
+(cd work && amfelt init --name discover --path discover/amfelt.yaml --level warn)
 
-step "Declaring the two plugins in the agent image, so it needs no download"
+step "Declaring the two plugins the project uses, each at the version the counts were made with"
+# registry: local means the agent runs the plugin itself, from its workspace work/.amfelt/.
 cat >>work/discover/amfelt.yaml <<'YAML'
 plugins:
   source:
     - plugin: postgres
+      version: 4.9.1
       registry: local
   target:
     - plugin: duckdb
+      version: 2.12.1
       registry: local
 YAML
 
+step "Installing the plugins the project declares"
+install_plugins discover/amfelt.yaml
+
 step "Importing the three schemas of the source into one contract"
 url=$(source_url)
-docker compose run --rm agent import jaffle "$url" \
+(cd work && amfelt import jaffle "$url" \
     --namespace sales,catalog,marketing --abbreviation jaffle \
-    --path discover/amfelt.yaml --level warn
+    --path discover/amfelt.yaml --level warn)
 
 contract=work/discover/contracts/jaffle.odcs.yaml
 step "What the contract in $contract says"
