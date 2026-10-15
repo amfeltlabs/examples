@@ -1,5 +1,9 @@
-# Sourced by every step. It moves to jaffle/, checks for .env, runs the containers as you,
-# and defines the helpers the steps share. It sets no shell options: each step sets its own.
+# Sourced by every step. It moves to jaffle/, checks for .env, and defines the helpers the
+# steps share. It sets no shell options: each step sets its own.
+#
+# The agent is the amfelt CLI on your PATH. The steps run it in work/, your project
+# directory, as `(cd work && amfelt ...)`, so its paths are relative to work/ and the
+# plugins it uses sit in work/.amfelt/, its workspace there.
 # shellcheck shell=sh
 
 cd "$(dirname "$0")/.." || exit 1
@@ -9,7 +13,11 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-# The agent writes work/ and warehouse/ as you, so the files it leaves there are yours.
+# The agent's workspace is .amfelt in the directory it runs in, unless AMFELT_DIR names
+# another; the steps install the plugins in work/.amfelt, so it must name none.
+unset AMFELT_DIR
+
+# The DuckDB container runs as you, so it can read the warehouse the agent wrote as you.
 HOST_UID=$(id -u)
 HOST_GID=$(id -g)
 export HOST_UID HOST_GID
@@ -25,10 +33,10 @@ else
     SLOW_PROGRESS="quiet"
 fi
 
-# source_url: how the agent reaches the source, as the service name on the compose network
-# with the demo login. The password is the one compose gives the database, read from
-# .env through compose itself and encoded for the URL. The agent warns that the URL
-# carries a login; for this local demo database that is expected.
+# source_url: how the agent reaches the source: the port compose publishes on 127.0.0.1,
+# with the demo login. The password is the one compose gives the database, read from .env
+# through compose itself and encoded for the URL. The agent warns that the URL carries a
+# login; for this local demo database that is expected.
 source_url() {
     password=$(docker compose config --format json | python3 -c '
 import json, sys, urllib.parse
@@ -37,7 +45,24 @@ print(urllib.parse.quote(config["services"]["source"]["environment"]["POSTGRES_P
         echo "error: cannot read the database password through docker compose config" >&2
         return 1
     }
-    printf 'postgres://jaffle:%s@source:5432/jaffle?sslmode=disable\n' "$password"
+    address=$(docker compose port source 5432 2>/dev/null) && [ -n "$address" ] || {
+        echo "error: the source database publishes no port; run steps/01-start.sh first" >&2
+        return 1
+    }
+    printf 'postgres://jaffle:%s@127.0.0.1:%s/jaffle?sslmode=disable\n' "$password" "${address##*:}"
+}
+
+# install_plugins PROJECT: install the plugins the project file work/PROJECT declares, at
+# the versions it declares, in work/.amfelt/, where the agent run in work/ looks for them.
+#
+# Once the release channel exists (roadmap#763), this is the agent's own command:
+#     (cd work && amfelt plugin install --path "$1" --level warn)
+# Until then that command cannot provision anything: it asks the plugin catalog of the
+# Amfelt API, which needs a registered agent and is not reachable without a control
+# plane. So the plugins come from their private GitHub releases instead, the same
+# archives the channel will carry, put where `amfelt plugin install` puts them.
+install_plugins() {
+    sh steps/install-from-github.sh plugins "work/$1" work/.amfelt
 }
 
 # step TEXT: say what happens next, in one line.

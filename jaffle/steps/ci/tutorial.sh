@@ -4,31 +4,36 @@
 #
 # Usage: sh jaffle/steps/ci/tutorial.sh [JAFFLE_DIR]
 #
-# The steps in JAFFLE_DIR/steps run unchanged, in the reader's order, against the agent
-# image .env.example pins. This script adds no step of its own to the tutorial; around
-# the steps it asserts, from its own queries:
+# The steps in JAFFLE_DIR/steps run unchanged, in the reader's order, with the amfelt CLI
+# on the PATH, as a reader installs it. This script adds no step of its own to the
+# tutorial; around the steps it asserts, from its own queries:
 #
-#   - before step 1, that the pinned image is what project/IMAGE says it is: its
-#     `amfelt version` is AGENT_VERSION, and it bakes exactly one source-postgres and one
-#     target-duckdb version, SOURCE_POSTGRES_VERSION and TARGET_DUCKDB_VERSION. Docker
-#     ignores the tag where a digest is present, so nothing else binds those labels. The
-#     4.x images of earlier release tags have `infusal-agent version` in its place;
+#   - before step 1, that the amfelt on the PATH reports project/IMAGE's AGENT_VERSION;
+#   - after step 2, that the agent's workspace work/.amfelt holds exactly one
+#     source-postgres and one target-duckdb version, SOURCE_POSTGRES_VERSION and
+#     TARGET_DUCKDB_VERSION, the ones the steps' project files declare and install;
+#   - before step 1, that the internal image project/IMAGE pins, which the stack's
+#     capture runs, is what project/IMAGE says it is: its `amfelt version` is
+#     AGENT_VERSION, and it bakes exactly one source-postgres and one target-duckdb
+#     version, SOURCE_POSTGRES_VERSION and TARGET_DUCKDB_VERSION. Docker ignores the tag
+#     where a digest is present, so nothing else binds those labels. The 4.x images of
+#     earlier release tags have `infusal-agent version` in its place;
 #   - after steps 4 and 6, every warehouse count of that run in expected/counts.yaml, and
 #     after step 6 the history reveal: the rows of the mover and of the deleted customer
 #     in the history table and in the bridge view of open versions;
 #   - a reader re-running step 4, run 1's sync included: the counts stay the same (plan
 #     Review Focus 3);
 #   - a reader leaving a DuckDB shell open: the sync fails, and its error output names the
-#     lock (Review Focus 4); the warehouse is unchanged afterwards;
+#     lock (Review Focus 4); the warehouse is unchanged afterwards. On Linux only, and so
+#     always in CI: Docker Desktop on macOS does not pass the container's lock to the agent;
 #   - the documented reset, steps/99-reset.sh (docker compose down --volumes): step 1 then
 #     starts from the freshly loaded source, with no project and no warehouse (Focus 3).
 #
 # It ends with steps/99-reset.sh, and runs it on any failure as well.
 #
-# Negative controls prove the assertions can fail. Before the tutorial starts,
-# check-image-pin.sh must reject a .env.example whose digest, and one whose tag, differs
-# from project/IMAGE. The image check must reject a project/IMAGE whose AGENT_VERSION,
-# SOURCE_POSTGRES_VERSION or TARGET_DUCKDB_VERSION the image does not match, and canned
+# Negative controls prove the assertions can fail. The image check, and after step 2 the
+# check of the installed CLI and plugins, must each reject a project/IMAGE whose
+# AGENT_VERSION, SOURCE_POSTGRES_VERSION or TARGET_DUCKDB_VERSION they do not match, and canned
 # probe output with each near miss: a version that is a prefix of the wanted one or has it
 # as its prefix, two baked plugin versions with the wanted one first or last, none, two
 # agent version lines, or the version line of another binary or of none. After run 2, the
@@ -43,6 +48,10 @@
 # TUTORIAL_COUNTS names the counts file the assertions read, by default
 # JAFFLE_DIR/expected/counts.yaml. A copy with one count changed must turn the run red;
 # the steps keep reading their own expected/counts.yaml.
+#
+# The steps install the plugins with gh from private GitHub releases until the release
+# channel exists (steps/install-from-github.sh), so gh must be signed in, or GH_TOKEN set,
+# with read access to amfeltlabs/hub.
 #
 # Docker: the compose project is amfelt-jaffle. The script refuses to start while any
 # container, volume or network of that project exists, or while work/ or warehouse/
@@ -103,7 +112,7 @@ with_lib() {
 # shellcheck disable=SC2016 # expanded by with_lib's shell
 sync_url_line='url=$(source_url)'
 # shellcheck disable=SC2016 # expanded by with_lib's shell
-sync_line='docker compose run --rm agent sync --job load --source-url "$url" --level warn'
+sync_line='(cd work && amfelt sync --job load --source-url "$url" --level warn)'
 sync_cmd="$sync_url_line; $sync_line"
 
 # duckdb SQL: run SQL in the reader's read-only DuckDB shell; one line per row, fields
@@ -277,36 +286,6 @@ perturb() {
     printf '%s\n' "$out"
 }
 
-# pin_control NAME WHAT SED-SCRIPT: check-image-pin.sh must reject a .env.example changed
-# by SED-SCRIPT, beside an unchanged project/IMAGE. WHAT says what changed.
-pin_control() {
-    env_copy=$(perturb "pin-$1" "$3" "$jaffle/.env.example")
-    mkdir -p "$tmp/pin-$1/project"
-    cp "$jaffle/project/IMAGE" "$tmp/pin-$1/project/IMAGE"
-    must_fail "check-image-pin.sh with $2 in .env.example" \
-        "differs from project/IMAGE's image, tag and digest" \
-        sh "$here/check-image-pin.sh" "$(dirname "$env_copy")"
-}
-
-# pin_controls: check-image-pin.sh must reject a .env.example whose digest differs in one
-# hex digit, in the case of one hex digit only, or whose tag differs.
-pin_controls() {
-    pin_digest=$(sed -n 's/^AGENT_IMAGE_DIGEST=sha256://p' "$jaffle/project/IMAGE")
-    case $pin_digest in
-        *0) other_digest=${pin_digest%?}1 ;;
-        *) other_digest=${pin_digest%?}0 ;;
-    esac
-    # The first letter of the digest in upper case: the same hex value, a different text.
-    upper_digest=$(printf '%s\n' "$pin_digest" \
-        | awk 'match($0, /[a-f]/) { print substr($0, 1, RSTART - 1) toupper(substr($0, RSTART, 1)) substr($0, RSTART + 1) }')
-    [ -n "$upper_digest" ] || die "negative control: the digest $pin_digest holds no letter to change the case of"
-    pin_tag=$(sed -n 's/^AGENT_IMAGE_TAG=//p' "$jaffle/project/IMAGE")
-    pin_tag_re=$(printf '%s\n' "$pin_tag" | sed 's/[.]/\\./g')
-    pin_control digest "one hex digit of the digest changed" "s/^\(AGENT_IMAGE=.*@sha256:\)$pin_digest\$/\1$other_digest/"
-    pin_control digest-case "one hex digit of the digest in upper case" "s/^\(AGENT_IMAGE=.*@sha256:\)$pin_digest\$/\1$upper_digest/"
-    pin_control tag "the tag changed" "s/^\(AGENT_IMAGE=[^@]*:\)$pin_tag_re@/\1${pin_tag}9@/"
-}
-
 # image_value FILE KEY: the value of the one KEY= line in the IMAGE file FILE.
 image_value() {
     n=$(grep -c "^$2=" "$1" || true)
@@ -314,10 +293,10 @@ image_value() {
     sed -n "s/^$2=//p" "$1"
 }
 
-# check_probe FILE REF AGENT PG DUCK: check the probe output FILE of the image REF, as
-# check_image_contents writes it: the agent binary it found (bin=), that binary's version
-# line (agent=), and one pg= and one duck= line per baked plugin version, or the glob
-# itself where none is. The version line must start with the binary's own name, then
+# check_probe FILE REF AGENT PG DUCK: check the probe output FILE of REF, the image or the
+# host install, as check_image_contents and check_install_contents write it: the agent
+# binary found (bin=), that binary's version line (agent=), and one pg= and one duck= line
+# per installed plugin version, or the glob itself where none is. The version line must start with the binary's own name, then
 # AGENT; the plugins must be PG only and DUCK only. Prints ok: lines, or error: lines and
 # fails. An error quotes the agent= lines space-joined, so it stays one line.
 check_probe() {
@@ -351,15 +330,15 @@ check_probe() {
             ;;
     esac
     if [ "$got_pg" = "$want_pg " ]; then
-        echo "ok: the image bakes source-postgres $want_pg only, SOURCE_POSTGRES_VERSION"
+        echo "ok: $probe_ref holds source-postgres $want_pg only, SOURCE_POSTGRES_VERSION"
     else
-        echo "error: the image bakes source-postgres '${got_pg% }', project/IMAGE's SOURCE_POSTGRES_VERSION is $want_pg" >&2
+        echo "error: $probe_ref holds source-postgres '${got_pg% }', project/IMAGE's SOURCE_POSTGRES_VERSION is $want_pg" >&2
         bad=1
     fi
     if [ "$got_duck" = "$want_duck " ]; then
-        echo "ok: the image bakes target-duckdb $want_duck only, TARGET_DUCKDB_VERSION"
+        echo "ok: $probe_ref holds target-duckdb $want_duck only, TARGET_DUCKDB_VERSION"
     else
-        echo "error: the image bakes target-duckdb '${got_duck% }', project/IMAGE's TARGET_DUCKDB_VERSION is $want_duck" >&2
+        echo "error: $probe_ref holds target-duckdb '${got_duck% }', project/IMAGE's TARGET_DUCKDB_VERSION is $want_duck" >&2
         bad=1
     fi
     return "$bad"
@@ -390,6 +369,35 @@ check_image_contents() {
         for v in /opt/amfelt/plugins/target/amfelt/duckdb/*; do echo "duck=${v##*/}"; done
     ' >"$tmp/image.out" || { echo "error: cannot run $ref" >&2; return 1; }
     check_probe "$tmp/image.out" "$ref" "$want_agent" "$want_pg" "$want_duck"
+}
+
+# check_install_contents IMAGE-FILE: probe what a reader's steps run with: the amfelt on
+# the PATH and the plugin versions steps 2 and 3 installed in the agent's workspace,
+# JAFFLE_DIR/work/.amfelt, where the agent run in work/ looks for them. Check them with
+# check_probe against the versions IMAGE-FILE names, as check_image_contents checks the image.
+check_install_contents() {
+    f=$1
+    want_agent=$(image_value "$f" AGENT_VERSION) || return 1
+    want_pg=v$(image_value "$f" SOURCE_POSTGRES_VERSION) || return 1
+    want_duck=v$(image_value "$f" TARGET_DUCKDB_VERSION) || return 1
+    plugins=$jaffle/work/.amfelt/plugins
+    {
+        if command -v amfelt >/dev/null 2>&1; then
+            echo "bin=amfelt"
+            echo "agent=$(NO_COLOR=1 amfelt version)"
+        fi
+        for v in "$plugins"/source/amfelt/postgres/*; do echo "pg=${v##*/}"; done
+        for v in "$plugins"/target/amfelt/duckdb/*; do echo "duck=${v##*/}"; done
+    } >"$tmp/install.out"
+    check_probe "$tmp/install.out" "the host install" "$want_agent" "$want_pg" "$want_duck"
+}
+
+# install_control NAME WHAT SED-SCRIPT TEXT: check_install_contents must reject
+# project/IMAGE changed by SED-SCRIPT, with one error, holding TEXT. WHAT says what changed.
+install_control() {
+    image_copy=$(perturb "install-$1" "$3" "$jaffle/project/IMAGE")
+    must_fail "the install check with $2 in project/IMAGE" "$4" check_install_contents "$image_copy"
+    one_error "the install check with $2 in project/IMAGE"
 }
 
 # one_error WHAT: the control's output, $tmp/control.out, holds exactly one error: line,
@@ -585,8 +593,13 @@ trap 'exit 130' INT TERM
 
 # --- Before anything runs ------------------------------------------------------------------
 
-say "checking the image pin, the counts file and the project file"
-sh "$here/check-image-pin.sh" "$jaffle"
+say "checking the amfelt CLI, the counts file and the project file"
+command -v amfelt >/dev/null || die "amfelt is not on the PATH; install it as README.md says"
+want_agent=$(image_value "$jaffle/project/IMAGE" AGENT_VERSION) || die "project/IMAGE names no AGENT_VERSION"
+case $(NO_COLOR=1 amfelt version 2>&1) in
+    "amfelt $want_agent" | "amfelt $want_agent "*) echo "ok: the amfelt on the PATH reports $want_agent, project/IMAGE's AGENT_VERSION" ;;
+    *) die "the amfelt on the PATH reports '$(NO_COLOR=1 amfelt version 2>&1)', not project/IMAGE's AGENT_VERSION $want_agent" ;;
+esac
 python3 "$jaffle/expected/counts.py" validate "$counts"
 python3 "$jaffle/check_project.py" "$jaffle/project/amfelt.yaml" "$counts" "$jaffle/project/IMAGE"
 
@@ -607,9 +620,6 @@ for line in "$sync_url_line" "$sync_line"; do
 done
 echo "ok: the sync of Review Focus 4 is the one steps/04-run1.sh runs"
 
-say "negative controls: the image pin"
-pin_controls
-
 say "checking that the pinned image is the version project/IMAGE says"
 check_image_contents "$jaffle/project/IMAGE" || die "the pinned image is not what project/IMAGE says it is"
 say "negative controls: the image's versions"
@@ -629,7 +639,7 @@ for dir in work warehouse; do
 done
 if [ -e "$jaffle/.env" ]; then
     cmp -s "$jaffle/.env" "$jaffle/.env.example" \
-        || die "$jaffle/.env differs from .env.example, so the run would not use the pinned image"
+        || die "$jaffle/.env differs from .env.example, so the run would not use the published settings"
 else
     say "cp .env.example .env"
     (cd "$jaffle" && cp .env.example .env)
@@ -643,6 +653,17 @@ started=1
 run_step 01-start.sh
 assert_source run1
 run_step 02-discover.sh
+
+say "checking the amfelt CLI and the plugins step 2 installed"
+check_install_contents "$jaffle/project/IMAGE" || die "the installed CLI and plugins are not what project/IMAGE says"
+say "negative controls: the installed versions"
+install_control agent "the agent version changed" 's/^AGENT_VERSION=.*/AGENT_VERSION=0.0.0/' \
+    "project/IMAGE's AGENT_VERSION is 0.0.0"
+install_control postgres "the PostgreSQL plugin version changed" \
+    's/^SOURCE_POSTGRES_VERSION=.*/SOURCE_POSTGRES_VERSION=0.0.0/' "project/IMAGE's SOURCE_POSTGRES_VERSION is v0.0.0"
+install_control duckdb "the DuckDB plugin version changed" \
+    's/^TARGET_DUCKDB_VERSION=.*/TARGET_DUCKDB_VERSION=0.0.0/' "project/IMAGE's TARGET_DUCKDB_VERSION is v0.0.0"
+
 run_step 03-configure.sh
 run_step 04-run1.sh
 
@@ -661,23 +682,32 @@ echo "ok: step 4 run again left all 28 counts unchanged"
 
 # --- Review Focus 4: a DuckDB shell holds the file open -----------------------------------------
 
-say "Review Focus 4: run 1's sync while a DuckDB shell holds the warehouse open"
-open_reader
-if with_lib "$sync_cmd" >"$tmp/lock.out" 2>"$tmp/lock.err"; then
-    die "the sync succeeded while a DuckDB shell held the warehouse open"
+# The agent runs on this machine and the DuckDB shell in a container. On Linux both share
+# one kernel, which takes DuckDB's lock on the file for both; this check is what shows it
+# holds. Docker Desktop on macOS runs the container in a virtual machine and does not pass
+# the lock across: there the sync runs on while the shell holds the file, so this check
+# cannot pass. It is skipped there, never in GitHub Actions.
+if [ "$(uname -s)" != Linux ] && [ "${GITHUB_ACTIONS:-}" != true ]; then
+    say "Review Focus 4: SKIPPED on $(uname -s): Docker Desktop does not pass the DuckDB shell's file lock to the agent on this machine"
 else
-    lock_status=$?
+    say "Review Focus 4: run 1's sync while a DuckDB shell holds the warehouse open"
+    open_reader
+    if with_lib "$sync_cmd" >"$tmp/lock.out" 2>"$tmp/lock.err"; then
+        die "the sync succeeded while a DuckDB shell held the warehouse open"
+    else
+        lock_status=$?
+    fi
+    close_reader
+    echo "the sync exited $lock_status; its error output:"
+    sed 's/^/  /' "$tmp/lock.err"
+    grep -q 'Could not set lock on file' "$tmp/lock.err" \
+        || die "the sync failed, but its error output does not name the lock"
+    echo "ok: the sync failed with exit $lock_status, and its error output names the lock"
+    snapshot >"$tmp/locked.counts"
+    diff -u "$tmp/run1.counts" "$tmp/locked.counts" \
+        || die "the failed sync changed the warehouse"
+    echo "ok: the failed sync left all 28 counts unchanged"
 fi
-close_reader
-echo "the sync exited $lock_status; its error output:"
-sed 's/^/  /' "$tmp/lock.err"
-grep -q 'Could not set lock on file' "$tmp/lock.err" \
-    || die "the sync failed, but its error output does not name the lock"
-echo "ok: the sync failed with exit $lock_status, and its error output names the lock"
-snapshot >"$tmp/locked.counts"
-diff -u "$tmp/run1.counts" "$tmp/locked.counts" \
-    || die "the failed sync changed the warehouse"
-echo "ok: the failed sync left all 28 counts unchanged"
 
 # --- Steps 5 and 6: run 2 and the reveal -------------------------------------------------------
 
@@ -704,14 +734,16 @@ run_step 99-reset.sh
 [ -z "$(project_resources)" ] || die "steps/99-reset.sh left containers, volumes or networks of $project"
 run_step 01-start.sh
 say "asserting that step 1 after the reset starts over"
-for dir in work warehouse; do
+for dir in work work/warehouse; do
     [ -d "$jaffle/$dir" ] || die "step 1 did not make $dir/"
 done
-# Step 1 makes the folders, work/warehouse/ among them; nothing else may be in them.
-leftover=$(find "$jaffle/work" "$jaffle/warehouse" ! -type d | head -n 5)
-[ -z "$leftover" ] || die "work/ or warehouse/ still holds files after the reset: $leftover"
+[ ! -e "$jaffle/warehouse" ] || die "warehouse/ is still there after the reset"
+# Step 1 makes the folders, work/warehouse/ among them; nothing else may be in them, not
+# even the plugins step 2 installed in work/.amfelt.
+leftover=$(find "$jaffle/work" ! -type d | head -n 5)
+[ -z "$leftover" ] || die "work/ still holds files after the reset: $leftover"
 assert_source run1
-echo "ok: after the reset, step 1 holds the freshly loaded source and empty work/ and warehouse/"
+echo "ok: after the reset, step 1 holds the freshly loaded source and an empty work/"
 
 # --- The end -----------------------------------------------------------------------------------
 

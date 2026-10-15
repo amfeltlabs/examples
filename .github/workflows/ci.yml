@@ -359,7 +359,7 @@ jobs:
   # Validates the tutorial's ready-made project file, jaffle/project/amfelt.yaml, against
   # the project-file schema, then checks it is the project the expected counts were made
   # for: its job's layer, schema prefix and select.objects equal counts.yaml's job block,
-  # and its PostgreSQL plugin version equals the image pin in jaffle/project/IMAGE. The
+  # and its PostgreSQL and DuckDB plugin versions equal the pins in jaffle/project/IMAGE. The
   # schema is a copy of core's; schemas/README.md names the commit it was taken from. The
   # validator and PyYAML are pinned to one release each.
   project:
@@ -385,21 +385,28 @@ jobs:
       - name: Check the project against the expected counts and the image pin
         run: python3 jaffle/check_project.py
 
-  # Runs the tutorial as a reader does: jaffle/steps/01-06 and 99, unchanged, against the
-  # agent quickstart image jaffle/.env.example pins, through jaffle/compose.yaml with the
-  # containers running as the runner's user. jaffle/steps/ci/tutorial.sh asserts, from its
+  # Runs the tutorial as a reader does: jaffle/steps/01-06 and 99, unchanged, with the
+  # amfelt CLI installed on the runner and on the PATH, the source and the DuckDB shell run
+  # through jaffle/compose.yaml, and the DuckDB container running as the runner's user.
+  # jaffle/steps/ci/tutorial.sh asserts, from its
   # own queries, every warehouse count of both runs and the history reveal against
   # jaffle/expected/counts.yaml; that a second sync on an unchanged source changes no
   # count; that a sync while a DuckDB shell holds the warehouse fails and names the lock;
   # and that steps/99-reset.sh returns step 1 to the freshly loaded source.
   #
   # Two checkouts. From the commit that triggered the workflow, in .tutorial-ci/, come only
-  # jaffle/steps/ci/tutorial.sh and check-image-pin.sh. Everything else comes from
-  # inputs.ref: the steps and lib.sh, compose.yaml, .env.example, project/ (amfelt.yaml,
-  # IMAGE), db/ (run2.sql, source_counts.sql), data/, expected/counts.yaml with
-  # counts.py, and check_project.py. So a dispatch tests a release tag's tutorial with the
-  # current helpers. The image is private: the workflow token reads it, which needs this
-  # repository's read access to the ghcr.io package.
+  # jaffle/steps/ci/tutorial.sh. Everything else comes from inputs.ref: the steps, lib.sh
+  # and install-from-github.sh, compose.yaml, .env.example, project/ (amfelt.yaml, IMAGE),
+  # db/ (run2.sql, source_counts.sql), data/, expected/counts.yaml with counts.py, and
+  # check_project.py. So a dispatch tests a release tag's tutorial with the current
+  # helpers; tags up to jaffle/v2.2.0 ran the agent in a container and fail them.
+  #
+  # Until the release channel exists (roadmap#763), the CLI and the plugins come from
+  # private GitHub releases of amfeltlabs/agent and amfeltlabs/hub, which the workflow
+  # token cannot read: a contents-read token of the org App reads them. tutorial.sh still
+  # checks the internal quickstart image project/IMAGE pins, which is private as well: the
+  # workflow token reads it, which needs this repository's read access to the ghcr.io
+  # package.
   tutorial:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -422,13 +429,31 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Check that .env.example runs the image project/IMAGE pins
-        run: sh .tutorial-ci/jaffle/steps/ci/check-image-pin.sh jaffle
+      - name: Mint a read token for the agent and plugin releases
+        id: release-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: agent,hub
+          permission-contents: read
+
+      # The reader's install, until the channel exists: steps/install-from-github.sh.
+      - name: Install the amfelt CLI
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
+        run: |
+          sh jaffle/steps/install-from-github.sh cli "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Log in to ghcr.io
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
+      # GH_TOKEN reaches steps 2 and 3, which install the plugins the project declares.
       - name: Run the tutorial's steps and assert what it publishes
+        env:
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
         run: sh .tutorial-ci/jaffle/steps/ci/tutorial.sh "$GITHUB_WORKSPACE/jaffle"

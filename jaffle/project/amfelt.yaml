@@ -23,7 +23,7 @@ targets:
     server:
       server: warehouse
       type: duckdb
-      path: /work/warehouse/jaffle.duckdb
+      path: warehouse/jaffle.duckdb
     maxConnections: 1
 jobs:
   - name: load
@@ -71,4 +71,5 @@ plugins:
       registry: local
   target:
     - plugin: duckdb
+      version: 2.12.1
       registry: local

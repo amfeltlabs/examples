@@ -1,9 +1,10 @@
-# The agent quickstart image this project was produced with and runs on, and the plugin
-# versions baked into it. amfelt.yaml records the PostgreSQL plugin's version, which must
-# equal SOURCE_POSTGRES_VERSION: the agent runs offline only with a plugin version the
-# image has installed. The DuckDB plugin's version is not recorded in amfelt.yaml, so it
-# is whatever the image installs. Change these lines together with the image, and update
-# or reproduce amfelt.yaml with them. One KEY=value per line; a shell can source it.
+# The versions this project was produced with and runs on: the amfelt CLI (AGENT_VERSION)
+# and the two plugins its project file declares, and the internal agent quickstart image
+# that bakes those same versions, which the stack's capture runs. amfelt.yaml records both
+# plugin versions, which must equal SOURCE_POSTGRES_VERSION and TARGET_DUCKDB_VERSION, and
+# steps 2 and 3 declare the same two. Change these lines together with the image, and
+# update or reproduce amfelt.yaml and the steps with them. One KEY=value per line; a shell
+# can source it.
 AGENT_IMAGE=ghcr.io/amfeltlabs/agent-quickstart
 AGENT_IMAGE_TAG=v5.0.7
 AGENT_IMAGE_DIGEST=sha256:64b1a2098cbc5ab46d8d6d510a5c8d99112cad9a19e74858a1c190475e4a6a87

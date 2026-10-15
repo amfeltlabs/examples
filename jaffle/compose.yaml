@@ -1,15 +1,15 @@
-# The Jaffle tutorial: a PostgreSQL source holding the Jaffle Shop, the Amfelt agent, and
-# a DuckDB shell to look at the warehouse the agent builds. The steps in steps/ drive it.
+# The Jaffle tutorial: a PostgreSQL source holding the Jaffle Shop, and a DuckDB shell to
+# look at the warehouse the agent builds. The agent is the amfelt CLI on your machine,
+# not a container. The steps in steps/ drive it.
 #
 #   cp .env.example .env     once, before step 1
 #   docker compose up -d --wait
 #
-# Only the source runs as a service. The agent and the DuckDB shell run one command at a
-# time, with `docker compose run --rm agent <command>` and `docker compose run --rm duckdb`.
+# Only the source runs as a service. The DuckDB shell runs one command at a time, with
+# `docker compose run --rm duckdb`.
 #
-# The agent reaches nothing but the source: their only network is internal, so neither
-# has a route to the internet or a port on this machine, and the agent has no control
-# plane and no plugin download. Both plugins it needs are baked into its image.
+# The source publishes its port on 127.0.0.1 only, so the agent on this machine reaches it
+# and nothing on your network does. The DuckDB shell has no network at all.
 name: amfelt-jaffle
 
 services:
@@ -22,13 +22,13 @@ services:
       POSTGRES_USER: jaffle
       POSTGRES_DB: jaffle
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?copy .env.example to .env first}
+    ports:
+      - "127.0.0.1:${SOURCE_PORT:-15432}:5432"
     volumes:
       - source-data:/var/lib/postgresql/data
       - ./db/initdb.sh:/docker-entrypoint-initdb.d/10-jaffle.sh:ro
       - ./db:/jaffle/db:ro
       - ./data:/data/jaffle:ro
-    networks:
-      - jaffle
     # Healthy once the load has finished: while the entrypoint runs initdb.sh, the server
     # takes no TCP connections, so a query over TCP succeeds only after the load.
     healthcheck:
@@ -38,44 +38,20 @@ services:
       retries: 60
       start_period: 120s
 
-  # The agent, with the PostgreSQL source and DuckDB target plugins baked in. It runs as
-  # you, so the files it writes in work/ and warehouse/ are yours, and it can write
-  # nowhere else: its root filesystem is read-only.
-  agent:
-    image: ${AGENT_IMAGE:?copy .env.example to .env first}
-    profiles: [tools]
-    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
-    read_only: true
-    tmpfs:
-      - /tmp
-    volumes:
-      - ./work:/work
-      - ./warehouse:/work/warehouse
-    working_dir: /work
-    networks:
-      - jaffle
-    depends_on:
-      source:
-        condition: service_healthy
-    command: ["--help"]
-
-  # A DuckDB shell on the warehouse, read-only and without a network. It may not open the
-  # file while the agent writes to it: DuckDB allows one writer and no readers beside it.
+  # A DuckDB shell on the warehouse the agent writes in work/warehouse/, read-only and
+  # without a network. It runs as you, so it can read the file the agent wrote as you. It
+  # may not open the file while the agent writes to it: DuckDB allows one writer and no
+  # readers beside it.
   duckdb:
     image: docker.io/duckdb/duckdb:1.5.6@sha256:6f42e04517e2445b525d105dcfd12ef774c30d29f7e124c72daaf655fcffc0bb
     profiles: [tools]
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     read_only: true
     volumes:
-      - ./warehouse:/warehouse:ro
+      - ./work/warehouse:/warehouse:ro
     working_dir: /warehouse
     network_mode: none
     entrypoint: ["/duckdb", "-readonly", "/warehouse/jaffle.duckdb"]
-
-networks:
-  # Internal: the containers on it reach each other and nothing else.
-  jaffle:
-    internal: true
 
 volumes:
   source-data:
