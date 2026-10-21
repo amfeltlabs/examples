@@ -1,9 +1,10 @@
 // Dependabot writes "<type>: Bump <dep> ..." with a capital B, which the conventional
 // config's subject-case rule rejects. Observed with a "ci" prefix from the github-actions
 // updater (examples b4d15ec) and a "chore(deps-dev)" prefix from the npm updater (stack
-// 5f760bd, amfeltlabs/github-actions a015cc0). The predicate below skips a commit only when it
-// matches one of three Dependabot shapes, so any other commit, and any Dependabot commit of
-// another shape, is still fully linted:
+// 5f760bd, amfeltlabs/github-actions a015cc0). The predicate below adds a skip only for
+// the three Dependabot shapes listed here; commitlint's built-in ignores (merge, revert,
+// fixup!/squash! and the like) still apply as before. A Dependabot commit of another shape
+// is linted like any other commit:
 //   1. Single dependency, title only: "<type>: Bump <dep> from <a> to <b>", optionally
 //      followed by "in the <group> group" or "in /<directory>".
 //   2. Grouped update, title only: "<type>: Bump the <group> group with <n> updates",

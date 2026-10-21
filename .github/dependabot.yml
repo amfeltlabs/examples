@@ -11,8 +11,9 @@ updates:
     commit-message:
       # Dependabot capitalizes "Bump" (seen here with this "ci" prefix, and from the npm
       # updater with a "chore(deps-dev)" prefix in stack 5f760bd), and subject-case rejects
-      # it. commitlint.config.js skips a commit only when its text matches one of the
-      # Dependabot shapes listed in its header; the prefix only keeps the type conventional.
+      # it. commitlint.config.js adds a skip only for the Dependabot shapes listed in its
+      # header, on top of commitlint's built-in ignores (merge, revert, fixup!/squash! and
+      # the like); the prefix only keeps the type conventional.
       prefix: "ci"
   - package-ecosystem: "npm"
     directory: "/"
