@@ -10,8 +10,9 @@ updates:
         update-types: ["minor", "patch"]
     commit-message:
       # The github-actions updater writes "ci: Bump ..." with a capital B whatever the prefix,
-      # and subject-case rejects it. commitlint.config.js ignores exactly that title shape;
-      # the prefix only keeps the type conventional.
+      # and subject-case rejects it. commitlint.config.js skips a commit only when its text matches
+      # one of the Dependabot shapes listed in its header; the prefix only keeps the type
+      # conventional.
       prefix: "ci"
   - package-ecosystem: "npm"
     directory: "/"
