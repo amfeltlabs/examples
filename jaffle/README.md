@@ -4,7 +4,7 @@ The Jaffle Shop dataset, and a hands-on tutorial that loads it with the Amfelt a
 
 ## What you need
 
-- The `amfelt` CLI 5.1.9 on your `PATH`, on macOS or Linux. See [Installing the CLI](#installing-the-cli).
+- The `amfelt` CLI 5.2.0 on your `PATH`, on macOS or Linux. See [Installing the CLI](#installing-the-cli).
 - The GitHub CLI, `gh`, signed in with read access to `amfeltlabs/agent` and `amfeltlabs/hub`, until the release channel exists: installing the CLI needs it, and so do steps 2 and 3, which install the plugins.
 - Docker with Docker Compose 2.22 or later, which runs the source database and a DuckDB shell.
 - `python3`, which the steps use to read the published expected results and to check your project against them.
