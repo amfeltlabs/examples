@@ -19,11 +19,11 @@ cat >>work/discover/amfelt.yaml <<'YAML'
 plugins:
   source:
     - plugin: postgres
-      version: 4.10.1
+      version: 4.10.3
       registry: local
   target:
     - plugin: duckdb
-      version: 2.13.2
+      version: 2.13.4
       registry: local
 YAML
 
