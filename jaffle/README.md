@@ -2,7 +2,7 @@
 
 The Jaffle Shop dataset: seven tables in three schemas, in a PostgreSQL source you start on your own machine, with a DuckDB shell to look at what the Amfelt agent loads.
 
-**The tutorial is at <https://amfelt.com/docs/quickstart/>.** It takes this dataset through the Amfelt app and the `amfelt` agent, which runs on your machine and not in a container.
+**The tutorial is at <https://amfelt.com/docs/quickstart/>.** You set things up in the Amfelt app, and the `amfelt` agent, which runs on your machine and not in a container, loads this dataset into DuckDB on that machine.
 
 ## Start the source
 
