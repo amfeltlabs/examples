@@ -85,3 +85,45 @@ compose_alone_controls() {
     grep -q 'not in a full clone' "$1/out" || die "negative control: a shallow clone failed for another reason"
     echo "ok: negative controls: only a ref that never held the file is skipped, and a shallow clone is refused"
 }
+
+# steps_dir_controls DIR STEPS_DIR_SH: negative controls on that script, in a throwaway tree
+# under DIR. A tag's jaffle/steps is found while it is the only one, ci/jaffle/steps wins
+# beside it, and a tree with neither is refused.
+steps_dir_controls() {
+    sd_tree=$1/layout
+    mkdir -p "$sd_tree/jaffle/steps"
+    : >"$sd_tree/jaffle/steps/01-start.sh"
+    sd_got=$(sh "$2" "$sd_tree/jaffle") || die "negative control: steps-dir.sh refused a tag's layout"
+    [ "$sd_got" = "$(cd "$sd_tree/jaffle/steps" && pwd)" ] || die "negative control: steps-dir.sh chose $sd_got for a tag's layout"
+
+    mkdir -p "$sd_tree/ci/jaffle/steps"
+    : >"$sd_tree/ci/jaffle/steps/01-start.sh"
+    sd_got=$(sh "$2" "$sd_tree/jaffle") || die "negative control: steps-dir.sh refused both layouts"
+    [ "$sd_got" = "$(cd "$sd_tree/ci/jaffle/steps" && pwd)" ] || die "negative control: steps-dir.sh chose $sd_got beside ci/jaffle/steps"
+
+    rm "$sd_tree/ci/jaffle/steps/01-start.sh" "$sd_tree/jaffle/steps/01-start.sh"
+    if sd_got=$(sh "$2" "$sd_tree/jaffle" 2>"$1/out"); then
+        die "negative control: steps-dir.sh accepted a tree with no steps: $sd_got"
+    fi
+    grep -q 'holds no steps' "$1/out" || die "negative control: steps-dir.sh failed for another reason"
+    echo "ok: negative controls: steps-dir.sh finds either layout, prefers ci/jaffle/steps, and refuses neither"
+}
+
+# reader_files_naming_steps JAFFLE_DIR: the files a reader opens that name the steps' path.
+reader_files_naming_steps() {
+    (cd "$1" && grep -lsE 'steps/|ci/jaffle' ../README.md README.md compose.yaml .env.example project/README.md) || true
+}
+
+# reader_files_controls DIR: negative controls on that check, in a throwaway tree under DIR:
+# a README that names no path passes, and each of the two paths is found.
+reader_files_controls() {
+    rf_tree=$1/reader/jaffle
+    mkdir -p "$rf_tree"
+    echo 'The steps of the tutorial.' >"$rf_tree/README.md"
+    [ -z "$(reader_files_naming_steps "$rf_tree")" ] || die "negative control: a README that names no path was found"
+    for rf_path in steps/01-start.sh ci/jaffle/tutorial.sh; do
+        echo "$rf_path" >"$rf_tree/README.md"
+        [ -n "$(reader_files_naming_steps "$rf_tree")" ] || die "negative control: a README naming $rf_path was not found"
+    done
+    echo "ok: negative controls: the check finds a file a reader opens that names either path"
+}

@@ -57,4 +57,4 @@ This removes the containers and the source database. Your warehouse stays in `wo
 | `db/`, `data/`        | The source model, its data, and the changes of the second run         |
 | `expected/`           | The row counts each layer must hold after each run                    |
 | `derive/`, `release/` | How the data was derived, and how it is released                      |
-| `project/`, `steps/`  | The agent's CLI-driven end-to-end job, which CI runs; not for readers |
+| `project/`            | The ready-made project CI and the stack run; not for readers          |

@@ -1,13 +1,15 @@
 #!/bin/sh
 # Run the reader's Compose path from a fresh clone, and assert it.
 #
-# Usage: sh jaffle/steps/ci/fresh-clone.sh [REPOSITORY]
+# Usage: sh ci/jaffle/fresh-clone.sh [REPOSITORY]
 #
 # It clones the commit REPOSITORY has checked out (by default the repository this script
 # is in), with core.autocrlf=true as a Windows reader may have it, and runs the commands
 # of jaffle/README.md, with no .env and none of the settings in the environment. No agent
 # and no secret is needed. It asserts that:
 #
+#   - jaffle/ holds no steps/, and the files a reader opens name neither that path nor
+#     ci/jaffle/, where the steps went;
 #   - work/warehouse/ exists and is writable by the reader before anything has run;
 #   - .env.example holds compose.yaml's defaults: Compose resolves the same config with it
 #     as with no settings file;
@@ -22,10 +24,11 @@
 #   - SOURCE_PORT in .env moves the published port;
 #   - the DuckDB shell reads a file only its owner can read, which this user wrote, with no
 #     user id passed to it. tutorial.sh asserts the same on the file the real agent writes;
-#   - git shows none of it as a change.
+#   - git shows none of it as a change, nor the .amfelt/ the agent writes in jaffle/.
 #
 # REPOSITORY needs its full history: a ref from before this path skips all of the above and
-# says so, and compose-alone.sh decides that, after negative controls on the decision.
+# says so, and compose-alone.sh decides that, after negative controls on the decision and on
+# steps-dir.sh and on the check of the files a reader opens.
 #
 # The login check reaches the source through --network host, so this script runs on Linux.
 #
@@ -34,7 +37,7 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-repository=$(cd "${1:-$here/../../..}" && pwd)
+repository=$(cd "${1:-$here/../..}" && pwd)
 project=amfelt-jaffle
 COMPOSE_PROGRESS=${COMPOSE_PROGRESS:-quiet}
 export COMPOSE_PROGRESS
@@ -122,6 +125,11 @@ reader_path() {
     git -c core.autocrlf=true clone --quiet --no-hardlinks "$repository" "$tmp/clone"
     cd "$tmp/clone/jaffle"
 
+    [ ! -e steps ] || die "a fresh clone holds jaffle/steps; the steps belong in ci/jaffle/steps"
+    named=$(reader_files_naming_steps .)
+    [ -z "$named" ] || die "files a reader opens name the CI-only steps: $named"
+    echo "ok: jaffle/ holds no steps/, and no file a reader opens names them"
+
     [ ! -e .env ] || die "a fresh clone holds a .env"
     [ -d work/warehouse ] && [ -w work/warehouse ] || die "work/warehouse/ is not a writable folder after a fresh clone"
     echo "ok: no .env, and work/warehouse/ is there and writable"
@@ -181,9 +189,11 @@ reader_path() {
     echo "ok: the DuckDB shell read the file with no user id passed to it (this user is uid $(id -u))"
 
     say "git status after all of it"
+    mkdir .amfelt
+    : >.amfelt/plugin
     changed=$(git status --porcelain)
     [ -z "$changed" ] || die "the reader's clone shows changes: $changed"
-    echo "ok: git ignores .env and the warehouse"
+    echo "ok: git ignores .env, the warehouse and .amfelt/"
 
     say "PASS: the reader's Compose path holds from a fresh clone"
 }
@@ -208,5 +218,7 @@ trap 'exit 130' INT TERM
 say "negative controls: which refs skip this run"
 mkdir "$tmp/controls"
 compose_alone_controls "$tmp/controls"
+steps_dir_controls "$tmp/controls" "$here/steps-dir.sh"
+reader_files_controls "$tmp/controls"
 
 compose_alone_check "$repository/jaffle" "the whole of the reader's Compose path" reader_path

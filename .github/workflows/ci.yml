@@ -373,7 +373,7 @@ jobs:
   # Two checkouts, as in the tutorial job: the script comes from the commit that triggered
   # the workflow, in .compose-ci/, and tests the tree of inputs.ref. A ref from before this
   # path skips the run and the log says so. The script decides that from the ref's history
-  # (jaffle/steps/ci/compose-alone.sh), so the ref's checkout needs all of it.
+  # (ci/jaffle/compose-alone.sh), so the ref's checkout needs all of it.
   compose:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -395,7 +395,7 @@ jobs:
           python-version: "3.12"
 
       - name: Run the reader's Compose path from a fresh clone
-        run: sh .compose-ci/jaffle/steps/ci/fresh-clone.sh "$GITHUB_WORKSPACE"
+        run: sh .compose-ci/ci/jaffle/fresh-clone.sh "$GITHUB_WORKSPACE"
 
   # Validates the tutorial's ready-made project file, jaffle/project/amfelt.yaml, against
   # the project-file schema, then checks it is the project the expected counts were made
@@ -426,17 +426,20 @@ jobs:
       - name: Check the project against the expected counts and the image pin
         run: python3 jaffle/check_project.py
 
-  # Runs the tutorial as a reader does: jaffle/steps/01-06 and 99, unchanged, with the
-  # amfelt CLI installed on the runner and on the PATH, the source and the DuckDB shell run
-  # through jaffle/compose.yaml. jaffle/steps/ci/tutorial.sh asserts, from its own queries,
+  # Runs the CLI-driven tutorial, the engine's regression proof on this dataset:
+  # ci/jaffle/steps/01-06 and 99, unchanged, with the amfelt CLI installed on the runner and
+  # on the PATH, the source and the DuckDB shell run through jaffle/compose.yaml. No reader
+  # runs these steps. ci/jaffle/tutorial.sh asserts, from its own queries,
   # every warehouse count of both runs and the history reveal against
   # jaffle/expected/counts.yaml; that a second sync on an unchanged source changes no
   # count; that a sync while a DuckDB shell holds the warehouse fails and names the lock;
   # and that steps/99-reset.sh returns step 1 to the freshly loaded source.
   #
   # Two checkouts. From the commit that triggered the workflow, in .tutorial-ci/, come only
-  # jaffle/steps/ci/tutorial.sh and compose-alone.sh. Everything else comes from inputs.ref:
-  # the steps, lib.sh and install-from-github.sh, compose.yaml, .env.example, project/
+  # ci/jaffle/tutorial.sh, compose-alone.sh and steps-dir.sh. Everything else comes from
+  # inputs.ref: the steps, lib.sh and install-from-github.sh, wherever that ref keeps them
+  # (ci/jaffle/steps, or jaffle/steps on the released tags: steps-dir.sh finds them),
+  # compose.yaml, .env.example, project/
   # (amfelt.yaml, IMAGE), db/ (run2.sql, source_counts.sql), data/, expected/counts.yaml
   # with counts.py, and check_project.py. So a dispatch tests a release tag's tutorial with
   # the current helpers; tags up to jaffle/v2.2.0 ran the agent in a container and fail
@@ -483,12 +486,13 @@ jobs:
           repositories: agent,hub
           permission-contents: read
 
-      # The reader's install, until the channel exists: steps/install-from-github.sh.
+      # The install, until the channel exists: install-from-github.sh, from inputs.ref.
       - name: Install the amfelt CLI
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
         run: |
-          sh jaffle/steps/install-from-github.sh cli "$RUNNER_TEMP/bin"
+          steps=$(sh .tutorial-ci/ci/jaffle/steps-dir.sh "$GITHUB_WORKSPACE/jaffle")
+          sh "$steps/install-from-github.sh" cli "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Log in to ghcr.io
@@ -500,4 +504,4 @@ jobs:
       - name: Run the tutorial's steps and assert what it publishes
         env:
           GH_TOKEN: ${{ steps.release-token.outputs.token }}
-        run: sh .tutorial-ci/jaffle/steps/ci/tutorial.sh "$GITHUB_WORKSPACE/jaffle"
+        run: sh .tutorial-ci/ci/jaffle/tutorial.sh "$GITHUB_WORKSPACE/jaffle"

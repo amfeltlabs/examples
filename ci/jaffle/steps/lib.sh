@@ -5,7 +5,10 @@
 # plugins it uses sit in work/.amfelt/, its workspace there.
 # shellcheck shell=sh
 
-cd "$(dirname "$0")/.." || exit 1
+# The steps sit in ci/jaffle/steps/, out of a reader's way, and run from jaffle/, the
+# tree they test.
+steps_dir=$(cd "$(dirname "$0")" && pwd) || exit 1
+cd "$steps_dir/../../../jaffle" || exit 1
 
 # The agent's workspace, where it looks for installed plugins, is .amfelt in the directory
 # it runs in; --amfelt-dir, AMFELT_DIR, INFUSAL_DIR or a settings file of the agent moves
@@ -40,7 +43,7 @@ print(urllib.parse.quote(config["services"]["source"]["environment"]["POSTGRES_P
         return 1
     }
     address=$(docker compose port source 5432 2>/dev/null) && [ -n "$address" ] || {
-        echo "error: the source database publishes no port; run steps/01-start.sh first" >&2
+        echo "error: the source database publishes no port; run ci/jaffle/steps/01-start.sh first" >&2
         return 1
     }
     printf 'postgres://jaffle:%s@127.0.0.1:%s/jaffle?sslmode=disable\n' "$password" "${address##*:}"
@@ -56,7 +59,7 @@ print(urllib.parse.quote(config["services"]["source"]["environment"]["POSTGRES_P
 # plane. So the plugins come from their private GitHub releases instead, the same
 # archives the channel will carry, put where `amfelt plugin install` puts them.
 install_plugins() {
-    sh steps/install-from-github.sh plugins "work/$1" work/.amfelt
+    sh "$steps_dir/install-from-github.sh" plugins "work/$1" work/.amfelt
 }
 
 # step TEXT: say what happens next, in one line.
