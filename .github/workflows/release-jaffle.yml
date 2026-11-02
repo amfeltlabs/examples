@@ -61,11 +61,11 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "ok: $TAG is a $kind of $(head -n 1 jaffle/VERSION), at $sha"
 
-  # The same jobs the pull request required: lint, commitlint, reproduce, addresses, load,
-  # asset, project and tutorial. A tag on a broken tree cannot publish. The tutorial job
-  # pulls the private agent image, so the call grants it packages: read, and mints a token
-  # of the org App to install the CLI and plugins, so the call passes that App's two
-  # secrets, and no other.
+  # Every job of ci.yml, whether or not the branch rules of main require it: lint,
+  # commitlint, reproduce, addresses, load, asset, compose, project and tutorial. Each must
+  # pass, so a tag on a broken tree cannot publish. The tutorial job pulls the private agent
+  # image, so the call grants it packages: read, and mints a token of the org App to install
+  # the CLI and plugins, so the call passes that App's two secrets, and no other.
   ci:
     needs: tag
     permissions:

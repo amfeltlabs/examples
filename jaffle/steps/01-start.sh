@@ -11,7 +11,7 @@ set -eu
 
 step "Checking for the amfelt CLI, docker, Docker Compose 2.22 or later, and python3"
 command -v amfelt >/dev/null \
-    || fail "the amfelt CLI is not on your PATH; README.md says how to install it"
+    || fail "the amfelt CLI is not on your PATH; steps/install-from-github.sh installs it"
 amfelt version
 made_with=$(sed -n 's/^AGENT_VERSION=//p' project/IMAGE)
 case $(amfelt version 2>&1) in

@@ -25,7 +25,7 @@ on:
         description: The private key of that App
         required: true
   # Runs every job against an existing ref, such as a release tag, with the workflow and
-  # the tutorial job's assertions of the branch it is dispatched on:
+  # the compose and tutorial jobs' assertions of the branch it is dispatched on:
   #   gh workflow run ci.yml --ref main -f ref=jaffle/v1.0.0
   workflow_dispatch:
     inputs:
@@ -365,6 +365,38 @@ jobs:
           diff -u "$RUNNER_TEMP/run2.expected" "$RUNNER_TEMP/run2.actual"
           echo "ok: the source matches runs.run2.source, the after address, and the deletion"
 
+  # Runs the reader's Compose path from a fresh clone, with no settings file and no agent:
+  # the source starts, db/run2.sql applies and is refused the second time, the reload
+  # works, SOURCE_PORT moves the port, and the DuckDB shell reads a file only its owner
+  # can read.
+  #
+  # Two checkouts, as in the tutorial job: the script comes from the commit that triggered
+  # the workflow, in .compose-ci/, and tests the tree of inputs.ref. A ref from before this
+  # path skips the run and the log says so. The script decides that from the ref's history
+  # (jaffle/steps/ci/compose-alone.sh), so the ref's checkout needs all of it.
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the helpers of the triggering commit
+        uses: actions/checkout@v7
+        with:
+          path: .compose-ci
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Run the reader's Compose path from a fresh clone
+        run: sh .compose-ci/jaffle/steps/ci/fresh-clone.sh "$GITHUB_WORKSPACE"
+
   # Validates the tutorial's ready-made project file, jaffle/project/amfelt.yaml, against
   # the project-file schema, then checks it is the project the expected counts were made
   # for: its job's layer, schema prefix and select.objects equal counts.yaml's job block,
@@ -396,19 +428,21 @@ jobs:
 
   # Runs the tutorial as a reader does: jaffle/steps/01-06 and 99, unchanged, with the
   # amfelt CLI installed on the runner and on the PATH, the source and the DuckDB shell run
-  # through jaffle/compose.yaml, and the DuckDB container running as the runner's user.
-  # jaffle/steps/ci/tutorial.sh asserts, from its
-  # own queries, every warehouse count of both runs and the history reveal against
+  # through jaffle/compose.yaml. jaffle/steps/ci/tutorial.sh asserts, from its own queries,
+  # every warehouse count of both runs and the history reveal against
   # jaffle/expected/counts.yaml; that a second sync on an unchanged source changes no
   # count; that a sync while a DuckDB shell holds the warehouse fails and names the lock;
   # and that steps/99-reset.sh returns step 1 to the freshly loaded source.
   #
   # Two checkouts. From the commit that triggered the workflow, in .tutorial-ci/, come only
-  # jaffle/steps/ci/tutorial.sh. Everything else comes from inputs.ref: the steps, lib.sh
-  # and install-from-github.sh, compose.yaml, .env.example, project/ (amfelt.yaml, IMAGE),
-  # db/ (run2.sql, source_counts.sql), data/, expected/counts.yaml with counts.py, and
-  # check_project.py. So a dispatch tests a release tag's tutorial with the current
-  # helpers; tags up to jaffle/v2.2.0 ran the agent in a container and fail them.
+  # jaffle/steps/ci/tutorial.sh and compose-alone.sh. Everything else comes from inputs.ref:
+  # the steps, lib.sh and install-from-github.sh, compose.yaml, .env.example, project/
+  # (amfelt.yaml, IMAGE), db/ (run2.sql, source_counts.sql), data/, expected/counts.yaml
+  # with counts.py, and check_project.py. So a dispatch tests a release tag's tutorial with
+  # the current helpers; tags up to jaffle/v2.2.0 ran the agent in a container and fail
+  # them. A later tag from before the reader's Compose path skips that path's two checks,
+  # and the log says so. compose-alone.sh decides that from the ref's history, so the
+  # ref's checkout needs all of it.
   #
   # Until the release channel exists (roadmap#763), the CLI and the plugins come from
   # private GitHub releases of amfeltlabs/agent and amfeltlabs/hub, which the workflow
@@ -426,6 +460,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Check out the helpers of the triggering commit

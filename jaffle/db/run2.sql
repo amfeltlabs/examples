@@ -1,6 +1,6 @@
 -- Run 2 of the Jaffle corpus: the changes that arrive after the pinned quarter, and the
 -- source of the tutorial's history reveal. Apply it once, to a database load.sql has
--- loaded:
+-- loaded (and see below for what a second time does):
 --
 --   psql -X -v ON_ERROR_STOP=1 -f jaffle/db/run2.sql
 --
@@ -15,8 +15,9 @@
 --
 -- The whole file is ONE transaction: it opens and commits its own, so a failure anywhere
 -- changes nothing. It needs no --single-transaction, unlike load.sql; with it, psql only
--- warns that a transaction is already in progress. Applied twice, or to a database that
--- already holds its rows, the first duplicate id fails it. ON_ERROR_STOP is turned on here
+-- warns that a transaction is already in progress. Applied twice, the check after BEGIN
+-- fails it, changes nothing, and says how to reload the source; to a database that holds
+-- only some of its rows, the first duplicate id fails it. ON_ERROR_STOP is turned on here
 -- as well, so psql stops at the first error even when the caller forgot the flag.
 --
 -- Every object is named with its schema, and the search path is pinned to pg_catalog for
@@ -74,6 +75,16 @@
 BEGIN;
 
 SET LOCAL search_path = pg_catalog;
+
+-- The whole file commits or nothing does, so one of its new rows tells that it was applied.
+DO $check$
+BEGIN
+    IF EXISTS (SELECT FROM sales.customers WHERE id = 'd0000000-0000-4000-8000-000000000001') THEN
+        RAISE EXCEPTION 'db/run2.sql is already applied to this database, so it changed nothing'
+            USING HINT = 'To apply it again from jaffle/, reload the source first: docker compose down -v, then docker compose up -d --wait';
+    END IF;
+END
+$check$;
 
 -- -----------------------------------------------------------------------------
 -- DELETES, children before parents
