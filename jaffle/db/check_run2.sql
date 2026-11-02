@@ -3,7 +3,7 @@
 --
 --   psql -X -v ON_ERROR_STOP=1 -v mover=<uuid> -f jaffle/db/check_run2.sql
 --
--- mover is the id of the customer who moves to Brooklyn (counts.py get reveal.customer_id).
+-- mover is the id of the customer who moves to Rotterdam (counts.py get reveal.customer_id).
 -- Every check runs and records its failures; the last statement raises an error listing
 -- them all, so psql exits non-zero, and only when none failed does it print its ok lines.
 -- expected/counts.yaml's source counts and the mover's address are compared separately,
@@ -11,17 +11,17 @@
 --
 -- What it asserts:
 --   1. every order, the corpus's and run 2's, charges order_total = subtotal + tax_paid,
---      and tax_paid follows the corpus's own rule, int(subtotal / 100 * tax_rate * 100) in
---      double precision, at the rate of the store it was placed at;
+--      and tax_paid is exactly subtotal * tax_rate, VAT at the rate of the store it was
+--      placed at, with nothing rounded;
 --   2. every order run 2 adds (ids starting d0000000-) has items, and its subtotal is the
 --      sum of their current prices: they are priced after the JAF-004 change;
 --   3. no order is placed before its store's opened_at. This is what keeps the comment on
 --      sales.stores.opened_at true: a store whose opening is after the order window has
---      not traded yet. After run 2 the window reaches Brooklyn's opening day; Chicago, San
---      Francisco, New Orleans and Los Angeles still open after it and hold no order;
---   4. the history reveal's beat: Brooklyn's first order is the mover's, on Brooklyn's
+--      not traded yet. After run 2 the window reaches Rotterdam's opening day; Antwerp,
+--      Lyon, Bologna and Valencia still open after it and hold no order;
+--   4. the history reveal's beat: Rotterdam's first order is the mover's, on Rotterdam's
 --      opening day, and the mover still holds the orders run 1 gave them;
---   5. the mover lives in Brooklyn: city Brooklyn, a 112xx ZIP code, country US.
+--   5. the mover lives in Rotterdam: city Rotterdam, a 30xx postal code, country NL.
 \set ON_ERROR_STOP on
 \set QUIET on
 SET search_path = pg_catalog;
@@ -36,8 +36,7 @@ SELECT 'order amounts',
   FROM sales.orders AS o
   JOIN sales.stores AS s ON s.id = o.store_id
  WHERE o.order_total IS DISTINCT FROM o.subtotal + o.tax_paid
-    OR o.tax_paid IS DISTINCT FROM
-       pg_catalog.trunc(o.subtotal::float8 / 100 * s.tax_rate::float8 * 100)::integer
+    OR o.tax_paid::numeric IS DISTINCT FROM o.subtotal * s.tax_rate
  ORDER BY o.id;
 
 -- 2. Run 2's orders are priced from their items.
@@ -64,12 +63,12 @@ SELECT 'store openings',
  WHERE o.ordered_at < s.opened_at
  ORDER BY o.id;
 
--- 4. The beat: the mover opens Brooklyn.
+-- 4. The beat: the mover opens Rotterdam.
 INSERT INTO pg_temp.failures (check_name, detail)
-SELECT 'Brooklyn''s first order', d.detail
+SELECT 'Rotterdam''s first order', d.detail
   FROM (
         SELECT CASE
-                 WHEN f.id IS NULL THEN 'Brooklyn has no order'
+                 WHEN f.id IS NULL THEN 'Rotterdam has no order'
                  WHEN f.customer_id IS DISTINCT FROM :'mover'::uuid
                    THEN pg_catalog.format('order %s is by customer %s, not the mover %s',
                                           f.id, f.customer_id, :'mover')
@@ -85,31 +84,31 @@ SELECT 'Brooklyn''s first order', d.detail
                  ORDER BY o.ordered_at, o.id
                  LIMIT 1
                ) AS f ON true
-         WHERE s.name = 'Brooklyn'
+         WHERE s.name = 'Rotterdam'
        ) AS d
  WHERE d.detail IS NOT NULL;
 
 INSERT INTO pg_temp.failures (check_name, detail)
 SELECT 'the mover''s orders',
-       pg_catalog.format('customer %s holds %s order(s) outside Brooklyn; run 1 gave them orders',
+       pg_catalog.format('customer %s holds %s order(s) outside Rotterdam; run 1 gave them orders',
                          :'mover', pg_catalog.count(o.id))
   FROM sales.orders AS o
   JOIN sales.stores AS s ON s.id = o.store_id
  WHERE o.customer_id = :'mover'::uuid
-   AND s.name <> 'Brooklyn'
+   AND s.name <> 'Rotterdam'
 HAVING pg_catalog.count(o.id) = 0;
 
--- 5. The move lands in Brooklyn.
+-- 5. The move lands in Rotterdam.
 INSERT INTO pg_temp.failures (check_name, detail)
 SELECT 'the mover''s address', d.detail
   FROM (
         SELECT CASE
                  WHEN c.id IS NULL
                    THEN pg_catalog.format('customer %s is not in sales.customers', :'mover')
-                 WHEN c.city IS DISTINCT FROM 'Brooklyn'
-                   OR c.postal_code IS NULL OR c.postal_code !~ '^112[0-9]{2}$'
-                   OR c.country IS DISTINCT FROM 'US'
-                   THEN pg_catalog.format('%s, %s, %s is not a Brooklyn address',
+                 WHEN c.city IS DISTINCT FROM 'Rotterdam'
+                   OR c.postal_code IS NULL OR c.postal_code !~ '^30[0-9]{2} [A-Z]{2}$'
+                   OR c.country IS DISTINCT FROM 'NL'
+                   THEN pg_catalog.format('%s, %s, %s is not a Rotterdam address',
                                           c.city, c.postal_code, c.country)
                END AS detail
           FROM (SELECT :'mover'::uuid AS id) AS m
@@ -135,5 +134,5 @@ $$;
 SELECT 'ok: order amounts and tax, at every store';
 SELECT 'ok: run 2''s orders are priced from their items';
 SELECT 'ok: no order precedes its store''s opening';
-SELECT 'ok: Brooklyn''s first order is the mover''s, on its opening day';
-SELECT 'ok: the mover lives in Brooklyn';
+SELECT 'ok: Rotterdam''s first order is the mover''s, on its opening day';
+SELECT 'ok: the mover lives in Rotterdam';

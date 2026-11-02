@@ -1,12 +1,12 @@
 #!/bin/sh
 # Step 6: run 2, and what the history layer remembers.
 #
-# The source now holds only Catherine Navarro's Brooklyn address, and no Jessica Lewis.
-# The history layer keeps both of Catherine's addresses, each with the runs that opened
-# and closed it, and closes Jessica's last version instead of losing it.
+# The source now holds only Nikos Lefebvre's Rotterdam address, and no Anouk Kowalski.
+# The history layer keeps both of Nikos's addresses, each with the runs that opened and
+# closed it, and closes Anouk's last version instead of losing it.
 #
 # The validity columns hold the start time of the run that opened or closed a version:
-# run 1 and run 2, not the day she moved. They are shown in UTC.
+# run 1 and run 2, not the day he moved. They are shown in UTC.
 set -eu
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
@@ -18,7 +18,7 @@ step "Run 2: loading the changed source into the warehouse"
 url=$(source_url)
 (cd work && amfelt sync --job load --source-url "$url" --level warn)
 
-step "Every version of Catherine Navarro and Jessica Lewis in the history layer"
+step "Every version of Nikos Lefebvre and Anouk Kowalski in the history layer"
 docker compose run --rm -T duckdb <<SQL
 SET TimeZone = 'UTC';
 SELECT name, street, city,

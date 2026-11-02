@@ -13,9 +13,10 @@
 #   1. the archive's SHA-256 matches ARCHIVE_SHA256, checked before anything is extracted;
 #   2. derive/trim.py turns the full-year files into the trimmed corpus;
 #   3. the trimmed corpus matches derive/trim.SHA256SUMS;
-#   4. derive/shift.py's unit tests pass on it, and its published files match the committed
-#      jaffle/data/ and jaffle/SHA256SUMS;
-#   5. derive/addresses.py, run on the committed customers.csv, writes exactly the committed
+#   4. the unit tests in derive/ pass on it, and derive/shift.py's files match
+#      derive/shift.SHA256SUMS;
+#   5. derive/localize.py's files match the committed jaffle/data/ and jaffle/SHA256SUMS;
+#   6. derive/addresses.py, run on the committed customers.csv, writes exactly the committed
 #      customer_addresses.csv, and the whole of jaffle/data/ matches jaffle/SHA256SUMS.
 # Later steps append below the marked line.
 set -eu
@@ -81,32 +82,38 @@ check_script() {
 }
 check_script trim.py TRIM_SHA256
 check_script shift.py SHIFT_SHA256
+check_script localize.py LOCALIZE_SHA256
 check_script addresses.py ADDRESSES_SHA256
-printf 'ok: PROVENANCE records the digests of trim.py, shift.py and addresses.py\n'
+printf 'ok: PROVENANCE records the digests of trim.py, shift.py, localize.py and addresses.py\n'
 
 # 3. Compare the trimmed corpus with its pinned digests.
 check_sums "$work/trim" "$here/trim.SHA256SUMS" trim
 printf 'ok: trim output matches trim.SHA256SUMS\n'
 
-# 4. Shift. shift.py checks the trim output against its digests itself. Its unit tests run
-# on the same trim output. The published files must match the committed jaffle/data/ and
-# its SHA256SUMS exactly.
+# 4. Shift. shift.py checks the trim output against its digests itself. The unit tests of
+# derive/ run on the same trim output.
 JAFFLE_TRIM_DIR="$work/trim" python3 -m unittest discover -s "$here" -t "$here" \
     || fail "unit tests failed"
-# SHA256SUMS also pins the addresses, which shift.py does not write; step 5 checks those.
-python3 "$here/shift.py" "$work/trim" "$work/data"
-grep -v '  customer_addresses.csv$' "$here/../SHA256SUMS" >"$work/shift.sums" || true
-grep '  customer_addresses.csv$' "$here/../SHA256SUMS" >"$work/addresses.sums" || true
-check_sums "$work/data" "$work/shift.sums" shift
-(cd "$work/data" && for f in *; do cmp -s "$f" "$here/../data/$f" || exit 1; done) \
-    || fail "shift output differs from the committed jaffle/data/"
-(cd "$here/../data" && find . -type f | grep -v '^\./customer_addresses\.csv$' | sort) >"$work/data.committed"
-(cd "$work/data" && find . -type f | sort) >"$work/data.shifted"
-cmp -s "$work/data.committed" "$work/data.shifted" \
-    || fail "jaffle/data/ holds files the shift did not write"
-printf 'ok: shift output matches jaffle/SHA256SUMS and jaffle/data/\n'
+python3 "$here/shift.py" "$work/trim" "$work/shift"
+check_sums "$work/shift" "$here/shift.SHA256SUMS" shift
+printf 'ok: shift output matches shift.SHA256SUMS\n'
 
-# 5. Addresses. addresses.py checks the committed customers.csv against SHA256SUMS itself,
+# 5. Localize. localize.py checks the shift output against its digests itself. The files
+# it writes must match the committed jaffle/data/ and its SHA256SUMS exactly.
+# SHA256SUMS also pins the addresses, which localize.py does not write; step 6 checks those.
+python3 "$here/localize.py" "$work/shift" "$work/data" >/dev/null
+grep -v '  customer_addresses.csv$' "$here/../SHA256SUMS" >"$work/localize.sums" || true
+grep '  customer_addresses.csv$' "$here/../SHA256SUMS" >"$work/addresses.sums" || true
+check_sums "$work/data" "$work/localize.sums" localize
+(cd "$work/data" && for f in *; do cmp -s "$f" "$here/../data/$f" || exit 1; done) \
+    || fail "localize output differs from the committed jaffle/data/"
+(cd "$here/../data" && find . -type f | grep -v '^\./customer_addresses\.csv$' | sort) >"$work/data.committed"
+(cd "$work/data" && find . -type f | sort) >"$work/data.localized"
+cmp -s "$work/data.committed" "$work/data.localized" \
+    || fail "jaffle/data/ holds files localize.py did not write"
+printf 'ok: localize output matches jaffle/SHA256SUMS and jaffle/data/\n'
+
+# 6. Addresses. addresses.py checks the committed customers.csv against SHA256SUMS itself,
 # and its unit tests ran with the discovery above. Its output must equal the committed
 # customer_addresses.csv exactly, and the whole of jaffle/data/ must match SHA256SUMS.
 python3 "$here/addresses.py" "$here/../data" "$work/addresses" >/dev/null \

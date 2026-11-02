@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Give every Jaffle customer a deterministic, synthetic Philadelphia address.
+"""Give every Jaffle customer a deterministic, synthetic Utrecht address.
 
 Usage: python3 addresses.py <data-dir> <out-dir>
 
@@ -9,9 +9,9 @@ must not exist or must be empty; customer_addresses.csv is written there and not
 
 The output has the columns customer_id,street,postal_code,city,country, one row per
 customer, in the order of customers.csv, with the CSV conventions of the other data files
-(header row, CRLF line endings, minimal quoting). Every customer is a Philadelphia
-customer: only the Philadelphia store trades in the pinned quarter. The later move to
-Brooklyn is authored by hand elsewhere and is not modeled here.
+(header row, CRLF line endings, minimal quoting). Every customer is a Utrecht customer:
+only the Utrecht store trades in the pinned quarter. The later move to Rotterdam is
+authored by hand elsewhere and is not modeled here.
 
 These addresses are our own synthetic additions. jafgen did not write them.
 
@@ -21,8 +21,8 @@ random, clock or environment input, so the output is identical across runs, inte
 versions and PYTHONHASHSEED values. Each field has its own salt, so the fields are
 independent of each other.
 
-Street and ZIP are not geographically paired: a Market St address may carry a ZIP code
-that does not contain Market St. That is acceptable for synthetic data.
+An address reads the Dutch way: street, then house number, and a postal code of four
+digits, a space and two letters. The postal code is drawn independently of the street.
 
 Python standard library only.
 """
@@ -34,38 +34,38 @@ import os
 import re
 import sys
 
-# Real Philadelphia street names in USPS style (public knowledge of the city's street grid).
+# Invented street names, so no address here is a real one. None of them was found by
+# name anywhere in the Netherlands in the national address register (BAG) on 2026-11-02,
+# through the PDOK locatieserver:
+#   curl -s --get https://api.pdok.nl/bzk/locatieserver/search/v3_1/free \
+#     --data-urlencode 'q=straatnaam:"Kaneelsingel"' --data-urlencode 'fq=type:weg'
+# Candidates it did find, such as Saffraanweg in Utrecht, were dropped.
 STREETS = (
-    "Market St", "Chestnut St", "Walnut St", "Spruce St", "Pine St", "Locust St",
-    "Arch St", "Race St", "Vine St", "South St", "Lombard St", "Christian St",
-    "Washington Ave", "Girard Ave", "Fairmount Ave", "Spring Garden St", "Callowhill St",
-    "Passyunk Ave", "Frankford Ave", "Germantown Ave", "Ridge Ave", "Lancaster Ave",
-    "Baltimore Ave", "Broad St", "Bainbridge St",
+    "Kaneelsingel", "Pepermuntlaan", "Wafelstraat", "Krentenhof", "Gemberkade",
+    "Anijsgracht", "Nootmuskaatlaan", "Kruidnagelhof", "Vanillekade", "Honingsingel",
+    "Kaneelplein", "Stroopwafelhof", "Beschuitkade", "Spijsgracht", "Boterkoeklaan",
+    "Peperkoekstraat", "Kruimelsteeg", "Koekjeskade", "Zuurdesemstraat", "Havermoutweg",
+    "Speltsingel", "Marsepeinkade",
 )
 
-# 49 of the 53 codes in 19102-19154. Established on 2026-10-10 by querying every code in
-# that range against the GeoNames-based api.zippopotam.us: all 53 resolve to Philadelphia,
-# PA. 19105, 19108, 19110 and 19117 are omitted by editorial choice.
-ZIP_CODES = (
-    "19102", "19103", "19104", "19106", "19107", "19109", "19111", "19112", "19113",
-    "19114", "19115", "19116", "19118", "19119", "19120", "19121", "19122", "19123",
-    "19124", "19125", "19126", "19127", "19128", "19129", "19130", "19131", "19132",
-    "19133", "19134", "19135", "19136", "19137", "19138", "19139", "19140", "19141",
-    "19142", "19143", "19144", "19145", "19146", "19147", "19148", "19149", "19150",
-    "19151", "19152", "19153", "19154",
-)
+# The digits of a Utrecht postal code, and the letters of a Dutch one. The Dutch postal
+# service does not use SA, SD or SS, so neither does this list.
+POSTAL_DIGITS = tuple(range(3511, 3586))
+POSTAL_LETTERS = tuple(a + b for a in "ABCEGHJKLMNPRSTVWXZ" for b in "ABCEGHJKLMNPRSTVWXZ"
+                       if a + b not in ("SA", "SD", "SS"))
 
 # House numbers run from 1 to HOUSE_MAX inclusive.
-HOUSE_MAX = 4999
-CITY = "Philadelphia"
-COUNTRY = "US"
+HOUSE_MAX = 299
+CITY = "Utrecht"
+COUNTRY = "NL"
 HEADER = ["customer_id", "street", "postal_code", "city", "country"]
 
 # One salt per field, so the fields are independent. Never change these: the published
 # file is the output they produce.
 SALT_HOUSE = "jaffle.address.house"
 SALT_STREET = "jaffle.address.street"
-SALT_ZIP = "jaffle.address.zip"
+SALT_POSTAL_DIGITS = "jaffle.address.postal.digits"
+SALT_POSTAL_LETTERS = "jaffle.address.postal.letters"
 
 CUSTOMERS = "customers.csv"
 OUTPUT = "customer_addresses.csv"
@@ -85,8 +85,9 @@ def address(customer_id):
     """The address record of one customer."""
     house = 1 + pick(SALT_HOUSE, customer_id, HOUSE_MAX)
     street = STREETS[pick(SALT_STREET, customer_id, len(STREETS))]
-    postal = ZIP_CODES[pick(SALT_ZIP, customer_id, len(ZIP_CODES))]
-    return [customer_id, "%d %s" % (house, street), postal, CITY, COUNTRY]
+    digits = POSTAL_DIGITS[pick(SALT_POSTAL_DIGITS, customer_id, len(POSTAL_DIGITS))]
+    letters = POSTAL_LETTERS[pick(SALT_POSTAL_LETTERS, customer_id, len(POSTAL_LETTERS))]
+    return [customer_id, "%s %d" % (street, house), "%d %s" % (digits, letters), CITY, COUNTRY]
 
 
 def recorded_digest(sums_path, name):

@@ -22,13 +22,19 @@ If port `15432` is taken, copy `.env.example` to `.env`, set `SOURCE_PORT` there
 
 ## Change the source
 
-`db/run2.sql` changes the source as a day of business would. Among other things, Catherine Navarro moves from Philadelphia to Brooklyn:
+`db/run2.sql` changes the source as a day of business would. Among other things, Nikos Lefebvre moves from Utrecht to Rotterdam:
 
 ```bash
 docker compose exec source psql -U jaffle -d jaffle -f /jaffle/db/run2.sql
 ```
 
 Apply it once. A second time it fails, changes nothing, and says how to reload the source.
+
+## The data
+
+Everything here is fictional: the customers, their addresses and the shop. The street names are invented. A customer's name is drawn from two lists of common names, leaving out the well-known people we found, so a name can still match a real person's by chance. No row describes a real person or a real address. Stores in Utrecht and Rotterdam trade; Antwerp, Lyon, Bologna and Valencia are planned openings.
+
+Amounts are integer euro cents. `subtotal` excludes VAT, `tax_rate` is the store's VAT rate, one flat rate for its whole menu, `tax_paid` is `subtotal * tax_rate`, and `order_total` is `subtotal + tax_paid`. Every order is at a Dutch store at 9%, and nothing rounds. The rates are illustrative, not tax advice.
 
 ## Look at the warehouse
 

@@ -27,7 +27,12 @@
 --   4. every table holds as many rows as its CSV file holds records, counted here from the
 --      files, independently of load.sql's pinned counts; customer_addresses.csv holds one
 --      record per customer; every customer has a non-empty street, postal code, city and
---      country.
+--      country;
+--   5. the columns with a closed form read as European: every customer lives in Utrecht, NL,
+--      at a Dutch postal code, every order's VAT is its subtotal at its store's rate, with
+--      nothing rounded, and every store's name is on the list of the six. It reads no free
+--      text. Names, product text and tweets are scanned in the files by derive/test_corpus.py,
+--      which also scans this file: a word list here would ship the words it forbids.
 \set QUIET on
 SET search_path = pg_catalog;
 
@@ -385,10 +390,42 @@ BEGIN
 END
 $$;
 
+-- 5. The columns with a closed form read as European. Each check is skipped when an earlier
+-- one already reported its table or column as missing.
+
+DO $$
+BEGIN
+    INSERT INTO pg_temp.failures (check_name, detail)
+    SELECT 'europe', format('customer %s lives at %s, %s, %s, %s', c.id, c.street, c.postal_code, c.city, c.country)
+      FROM ONLY sales.customers AS c
+     WHERE c.city IS DISTINCT FROM 'Utrecht'
+        OR c.country IS DISTINCT FROM 'NL'
+        OR c.postal_code !~ '^[1-9][0-9]{3} [A-Z]{2}$';
+
+    INSERT INTO pg_temp.failures (check_name, detail)
+    SELECT 'europe', format('order %s: subtotal %s, tax_paid %s, order_total %s at tax_rate %s',
+                            o.id, o.subtotal, o.tax_paid, o.order_total, s.tax_rate)
+      FROM ONLY sales.orders AS o
+      JOIN ONLY sales.stores AS s ON s.id = o.store_id
+     WHERE o.order_total IS DISTINCT FROM o.subtotal + o.tax_paid
+        OR o.tax_paid::numeric IS DISTINCT FROM o.subtotal * s.tax_rate;
+
+    INSERT INTO pg_temp.failures (check_name, detail)
+    SELECT 'europe', format('store %s has tax_rate %s', s.name, s.tax_rate)
+      FROM ONLY sales.stores AS s
+      LEFT JOIN (VALUES ('Utrecht', 0.09), ('Rotterdam', 0.09), ('Antwerp', 0.12),
+                        ('Lyon', 0.10), ('Bologna', 0.10), ('Valencia', 0.10)) AS w (name, rate)
+        ON w.name = s.name
+     WHERE w.rate IS DISTINCT FROM s.tax_rate;
+EXCEPTION WHEN undefined_table OR undefined_column THEN
+    NULL;  -- already reported as a missing table or a column mismatch
+END
+$$;
+
 -- Report.
 
 SELECT format('ok: %s', c) AS result
-  FROM unnest('{schemas,tables,columns,public,comments,keys,constraints,rows}'::text[]) WITH ORDINALITY AS u (c, i)
+  FROM unnest('{schemas,tables,columns,public,comments,keys,constraints,rows,europe}'::text[]) WITH ORDINALITY AS u (c, i)
  WHERE NOT EXISTS (SELECT FROM pg_temp.failures)
  ORDER BY i;
 

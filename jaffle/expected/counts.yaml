@@ -73,7 +73,7 @@ runs:
     bridge_act:  { customers: 233, stores: 6, orders: 6841, order_items: 10031, products: 10, supplies: 65, tweets: 2163 }
     bridge_hst:  { customers: 236, stores: 6, orders: 6841, order_items: 10031, products: 11, supplies: 65, tweets: 2163 }
 
-# The history reveal: the customer who moves to Brooklyn in run 2, and the customer run 2
+# The history reveal: the customer who moves to Rotterdam in run 2, and the customer run 2
 # deletes. In the source, each is the row of sales.customers whose id is its customer_id;
 # in the warehouse, the rows of the history object `object` whose `key_column` is that id,
 # and of its bridge_act view. The address fields are named after their columns, and a
@@ -92,9 +92,9 @@ reveal:
   object: customers
   key_column: id
   customer_id: "8224248d-b37a-4e73-8571-24b7d3435150"
-  name: "Catherine Navarro"
-  before: { street: "947 Spruce St", postal_code: "19118", city: "Philadelphia", country: "US" }
-  after:  { street: "418 Atlantic Ave", postal_code: "11217", city: "Brooklyn", country: "US" }
+  name: "Nikos Lefebvre"
+  before: { street: "Kruimelsteeg 58", postal_code: "3585 LG", city: "Utrecht", country: "NL" }
+  after:  { street: "Honingsingel 41", postal_code: "3021 KV", city: "Rotterdam", country: "NL" }
   history:
     run: run2
     rows: 2
@@ -107,8 +107,8 @@ reveal:
     holds: after
   deleted:
     customer_id: "09790bf5-a40a-4b7a-8446-a1a224fcb07b"
-    name: "Jessica Lewis"
-    before: { street: "3405 Spring Garden St", postal_code: "19149", city: "Philadelphia", country: "US" }
+    name: "Anouk Kowalski"
+    before: { street: "Zuurdesemstraat 226", postal_code: "3577 EK", city: "Utrecht", country: "NL" }
     history:
       run: run2
       rows: 1

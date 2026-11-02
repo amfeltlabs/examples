@@ -59,8 +59,10 @@ NON_STRING_WORDS = {
     "true", "false", "yes", "no", "on", "off", "y", "n", "null",
 }
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\Z")
-ZIP = re.compile(r"[0-9]{5}\Z")
-BROOKLYN_ZIP = re.compile(r"112[0-9]{2}\Z")
+# A Dutch postal code: four digits with no leading zero, a space, two letters.
+POSTAL_CODE = re.compile(r"[1-9][0-9]{3} [A-Z]{2}\Z")
+MOVE_CITY = "Rotterdam"
+MOVE_POSTAL_CODE = re.compile(r"30[0-9]{2} [A-Z]{2}\Z")
 
 
 class CountsError(Exception):
@@ -243,7 +245,7 @@ def check_keys(problems, where, mapping, expected):
 
 
 def check_address(problems, where, address):
-    """True when address holds the four fields, each a one-line string, the ZIP 5 digits."""
+    """True when address holds the four fields, each a one-line string, a Dutch postal code."""
     if not check_keys(problems, where, address, ADDRESS_FIELDS):
         return False
     ok = True
@@ -252,9 +254,9 @@ def check_address(problems, where, address):
         if not isinstance(value, str) or not value.strip() or "\t" in value or "\n" in value:
             ok = False
             problems.append("%s.%s: must be a non-empty one-line string, is %r" % (where, field, value))
-    if isinstance(address["postal_code"], str) and not ZIP.match(address["postal_code"]):
+    if isinstance(address["postal_code"], str) and not POSTAL_CODE.match(address["postal_code"]):
         ok = False
-        problems.append("%s.postal_code: must be a quoted 5-digit ZIP code" % where)
+        problems.append("%s.postal_code: must be a Dutch postal code, as 3521 HN" % where)
     return ok
 
 
@@ -402,10 +404,10 @@ def check_reveal(problems, reveal):
     after_ok = check_address(problems, "reveal.after", reveal["after"])
     if after_ok:
         after = reveal["after"]
-        if after["city"] != "Brooklyn":
-            problems.append("reveal.after.city: the move is to Brooklyn, not %r" % (after["city"],))
-        if not BROOKLYN_ZIP.match(after["postal_code"]):
-            problems.append("reveal.after.postal_code: a Brooklyn ZIP code is 112xx, not %r"
+        if after["city"] != MOVE_CITY:
+            problems.append("reveal.after.city: the move is to %s, not %r" % (MOVE_CITY, after["city"]))
+        if not MOVE_POSTAL_CODE.match(after["postal_code"]):
+            problems.append("reveal.after.postal_code: a Rotterdam postal code here is 30xx, not %r"
                             % (after["postal_code"],))
     if before_ok and after_ok:
         before, after = reveal["before"], reveal["after"]

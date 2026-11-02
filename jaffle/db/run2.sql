@@ -10,8 +10,9 @@
 -- over to this model's names, with every date moved forward by the same 2,555 days as the
 -- corpus (2018-12-01 becomes 2025-11-29, 2019-03-12 becomes 2026-03-10; times of day are
 -- unchanged), new customers given addresses, and one beat added: an existing customer
--- moves to Brooklyn and places the store's first order. expected/counts.yaml holds the
--- counts this file produces, and its header shows the arithmetic.
+-- moves to Rotterdam and places the store's first order. derive/localize.py's names, cities
+-- and VAT apply here too. expected/counts.yaml holds the counts this file produces, and its
+-- header shows the arithmetic.
 --
 -- The whole file is ONE transaction: it opens and commits its own, so a failure anywhere
 -- changes nothing. It needs no --single-transaction, unlike load.sql; with it, psql only
@@ -39,26 +40,26 @@
 -- appended and its first version stays as it was, so an update there would be wrong data,
 -- not history.
 -- Each updated customer changes in one way only, so each new SCD2 version shows exactly
--- one change: Kristin Frank is renamed and does not move; the customer who moves keeps
--- their name.
+-- one change: Julia Lefebvre is renamed and does not move; the customer who moves keeps
+-- his name.
 --
 -- New rows carry ids that start d0000000-, so a reader can pick them out of any layer.
--- Money is integer cents. A new order's subtotal is the sum of its items' current prices,
--- and its tax_paid follows the corpus's own rule, int(subtotal / 100 * tax_rate * 100) in
--- floating point, at its store's tax_rate; every one of the 6,837 loaded orders satisfies
--- it. Addresses follow customer_addresses.csv: house number and street in USPS style, a
--- 5-digit ZIP code, the city, and the country as ISO 3166-1 alpha-2.
+-- Money is integer euro cents. A new order's subtotal is the sum of its items' current
+-- prices, excluding VAT, and its tax_paid is exactly subtotal * its store's tax_rate, as in
+-- every one of the 6,837 loaded orders. Addresses follow customer_addresses.csv: an invented
+-- street, then the house number, a Dutch postal code, the city, and the country as ISO 3166-1
+-- alpha-2.
 --
 -- THE MOVE
 --
--- Catherine Navarro (8224248d-b37a-4e73-8571-24b7d3435150) moves from 947 Spruce St,
--- Philadelphia 19118, to 418 Atlantic Ave, Brooklyn 11217, and places the first order at
--- the Brooklyn store on its opening day. She is chosen by a rule, not by hand: the
--- customers with the most orders in the pinned quarter, among those no other change in this
--- file touches, are a six-way tie at 66 orders; she has the lowest id of the six. A
--- regular is the believable customer to follow a new store across the river, and the rule
--- leaves out Jessica Lewis (deleted), Kristin Frank (renamed, and her tweet deleted) and
--- Melvin Ingram (his order voided). The query that applies it, on the loaded corpus:
+-- Nikos Lefebvre (8224248d-b37a-4e73-8571-24b7d3435150) moves from Kruimelsteeg 58, 3585 LG
+-- Utrecht, to Honingsingel 41, 3021 KV Rotterdam, and places the first order at the
+-- Rotterdam store on its opening day. He is chosen by a rule, not by hand: the customers
+-- with the most orders in the pinned quarter, among those no other change in this file
+-- touches, are a six-way tie at 66 orders; he has the lowest id of the six. A regular is the
+-- believable customer to follow a new store to another city, and the rule leaves out Anouk
+-- Kowalski (deleted), Julia Lefebvre (renamed, and her tweet deleted) and Inês Jacobs (her
+-- order voided). The query that applies it, on the loaded corpus:
 --
 --   SELECT o.customer_id, count(*) FROM sales.orders AS o
 --    WHERE o.customer_id NOT IN ('09790bf5-a40a-4b7a-8446-a1a224fcb07b',
@@ -66,9 +67,9 @@
 --                                'e15678d3-3632-4e50-a703-f0ff9014081d')
 --    GROUP BY o.customer_id ORDER BY count(*) DESC, o.customer_id LIMIT 1;
 --
--- Her name does not change and her past orders stay where they were placed. Her address
--- is an update of an existing row, so SCD2 history closes the Philadelphia version and
--- opens the Brooklyn one; expected/counts.yaml's reveal block records both.
+-- His name does not change and his past orders stay where they were placed. His address
+-- is an update of an existing row, so SCD2 history closes the Utrecht version and opens the
+-- Rotterdam one; expected/counts.yaml's reveal block records both.
 
 \set ON_ERROR_STOP on
 
@@ -90,8 +91,8 @@ $check$;
 -- DELETES, children before parents
 -- -----------------------------------------------------------------------------
 
--- 1. Jessica Lewis closes her account. She placed one order, on 2025-11-28 at 08:17 (an
---    adele-ade), and never tweeted.
+-- 1. Anouk Kowalski closes her account. She placed one order, on 2025-11-28 at 08:17 (a
+--    kiwi cooler), and never tweeted.
 --    SCD2 effect: her history row is closed, so she leaves the active view and stays in
 --    history. Her order and its item go first; append history keeps those withdrawn facts.
 DELETE FROM sales.order_items
@@ -100,14 +101,14 @@ DELETE FROM sales.order_items
 DELETE FROM sales.orders WHERE customer_id = '09790bf5-a40a-4b7a-8446-a1a224fcb07b';
 DELETE FROM sales.customers WHERE id = '09790bf5-a40a-4b7a-8446-a1a224fcb07b';
 
--- 2. The quarter's last order (Melvin Ingram, 2025-11-28 19:27, a tangaroo and a
---    nutellaphone who dis?) is voided, and its two items with it.
+-- 2. The quarter's last order (Inês Jacobs, 2025-11-28 19:27, a tangaroo and a hazelnut
+--    hotline) is voided, and its two items with it.
 --    Append effect: nothing is closed. The order and both items stay in history and in
 --    the active view; the warehouse keeps a fact the source has withdrawn.
 DELETE FROM sales.order_items WHERE order_id = '7dd3d972-d159-418b-bc33-b2db228eb694';
 DELETE FROM sales.orders WHERE id = '7dd3d972-d159-418b-bc33-b2db228eb694';
 
--- 3. Kristin Frank deletes her first tweet (2025-08-30, "This place is gross.").
+-- 3. Julia Lefebvre deletes her first tweet (2025-08-30, "This place is gross.").
 --    Append effect: the tweet stays in history and in the active view.
 DELETE FROM marketing.tweets WHERE id = '73388773-d088-43ab-861a-f5238057e401';
 
@@ -115,22 +116,22 @@ DELETE FROM marketing.tweets WHERE id = '73388773-d088-43ab-861a-f5238057e401';
 -- UPDATES, master and reference tables only
 -- -----------------------------------------------------------------------------
 
--- 4. Kristin Frank changes her name to Kristin Frank-Ellis. Her address does not change.
---    SCD2 effect: the Kristin Frank row is closed and a Kristin Frank-Ellis row opens.
+-- 4. Julia Lefebvre changes her name to Julia Lefebvre-Bakker. Her address does not change.
+--    SCD2 effect: the Julia Lefebvre row is closed and a Julia Lefebvre-Bakker row opens.
 UPDATE sales.customers
-   SET name = 'Kristin Frank-Ellis'
+   SET name = 'Julia Lefebvre-Bakker'
  WHERE id = '6350f2b4-88cb-4522-ab80-bce28ec10633';
 
--- 5. Catherine Navarro moves to Brooklyn (see THE MOVE). Her name and country do not
+-- 5. Nikos Lefebvre moves to Rotterdam (see THE MOVE). His name and country do not
 --    change.
---    SCD2 effect: the Philadelphia row is closed and a Brooklyn row opens.
+--    SCD2 effect: the Utrecht row is closed and a Rotterdam row opens.
 UPDATE sales.customers
-   SET street = '418 Atlantic Ave',
-       postal_code = '11217',
-       city = 'Brooklyn'
+   SET street = 'Honingsingel 41',
+       postal_code = '3021 KV',
+       city = 'Rotterdam'
  WHERE id = '8224248d-b37a-4e73-8571-24b7d3435150';
 
--- 6. The flame impala (JAF-004) goes up from 14.00 to 15.00.
+-- 6. The flame fandango (JAF-004) goes up from 14.00 to 15.00.
 --    SCD2 effect: the 1400 version is closed and a 1500 version opens. The orders already
 --    placed keep the prices they were charged; the new ones below pay 1500.
 UPDATE catalog.products
@@ -141,33 +142,32 @@ UPDATE catalog.products
 -- INSERTS, parents before children
 -- -----------------------------------------------------------------------------
 
--- 7. Two first-time customers. Priya's first order is at the Brooklyn store, so she lives
---    in Brooklyn; Tomas's is in Philadelphia, so he lives there.
+-- 7. Two first-time customers. Noor's first order is at the Rotterdam store, so she lives
+--    in Rotterdam; Mateusz's is in Utrecht, so he lives there.
 INSERT INTO sales.customers (id, name, street, postal_code, city, country) VALUES
-    ('d0000000-0000-4000-8000-000000000001', 'Priya Natarajan',
-     '120 Court St', '11201', 'Brooklyn', 'US'),
-    ('d0000000-0000-4000-8000-000000000002', 'Tomas Alvarez',
-     '2215 Walnut St', '19103', 'Philadelphia', 'US');
+    ('d0000000-0000-4000-8000-000000000001', 'Noor El Amrani',
+     'Marsepeinkade 8', '3014 BT', 'Rotterdam', 'NL'),
+    ('d0000000-0000-4000-8000-000000000002', 'Mateusz Lindqvist',
+     'Kaneelsingel 215', '3521 HN', 'Utrecht', 'NL');
 
 -- 8. Four orders.
---    - Brooklyn's first order, on its opening day (sales.stores.opened_at 2026-03-10), the
---      first order at any store but Philadelphia: Catherine, at 07:42, early as her
---      Philadelphia orders were, a for richer or pourover, 700, tax at 0.04 = 28.
---    - Brooklyn's second, later that morning: Priya, a flame impala at the new price and a
---      tangaroo, 1500 + 600 = 2100, tax at 0.04 = 84.
---    - Tomas's first order, in Philadelphia: a nutellaphone who dis?, 1100, tax at
---      0.06 = 65.
---    - Kristin, under her new name, in Philadelphia: a flame impala and a chai and mighty,
---      1500 + 500 = 2000, tax at 0.06 = 120.
+--    - Rotterdam's first order, on its opening day (sales.stores.opened_at 2026-03-10), the
+--      first order at any store but Utrecht: Nikos, at 07:42, early as his Utrecht orders
+--      were, a for richer or pourover, 700, VAT at 0.09 = 63.
+--    - Rotterdam's second, later that morning: Noor, a flame fandango at the new price and a
+--      tangaroo, 1500 + 600 = 2100, VAT at 0.09 = 189.
+--    - Mateusz's first order, in Utrecht: a hazelnut hotline, 1100, VAT at 0.09 = 99.
+--    - Julia, under her new name, in Utrecht: a flame fandango and a chai and mighty,
+--      1500 + 500 = 2000, VAT at 0.09 = 180.
 INSERT INTO sales.orders (id, customer_id, store_id, ordered_at, subtotal, tax_paid, order_total) VALUES
     ('d0000000-0000-4000-8000-000000000104', '8224248d-b37a-4e73-8571-24b7d3435150',
-     'c9471206-c14b-46c1-a93b-fe94ee386b24', '2026-03-10 07:42:00', 700, 28, 728),
+     'c9471206-c14b-46c1-a93b-fe94ee386b24', '2026-03-10 07:42:00', 700, 63, 763),
     ('d0000000-0000-4000-8000-000000000101', 'd0000000-0000-4000-8000-000000000001',
-     'c9471206-c14b-46c1-a93b-fe94ee386b24', '2026-03-10 11:05:00', 2100, 84, 2184),
+     'c9471206-c14b-46c1-a93b-fe94ee386b24', '2026-03-10 11:05:00', 2100, 189, 2289),
     ('d0000000-0000-4000-8000-000000000102', 'd0000000-0000-4000-8000-000000000002',
-     '2efff8c6-64e3-4e79-8257-c78ffd3395d0', '2025-11-29 09:12:00', 1100, 65, 1165),
+     '2efff8c6-64e3-4e79-8257-c78ffd3395d0', '2025-11-29 09:12:00', 1100, 99, 1199),
     ('d0000000-0000-4000-8000-000000000103', '6350f2b4-88cb-4522-ab80-bce28ec10633',
-     '2efff8c6-64e3-4e79-8257-c78ffd3395d0', '2025-11-29 12:40:00', 2000, 120, 2120);
+     '2efff8c6-64e3-4e79-8257-c78ffd3395d0', '2025-11-29 12:40:00', 2000, 180, 2180);
 
 -- 9. The six items of those orders.
 INSERT INTO sales.order_items (id, order_id, sku) VALUES
@@ -182,9 +182,9 @@ INSERT INTO sales.order_items (id, order_id, sku) VALUES
 INSERT INTO marketing.tweets (id, customer_id, tweeted_at, content) VALUES
     ('d0000000-0000-4000-8000-000000000301', 'd0000000-0000-4000-8000-000000000001',
      '2026-03-10 11:31:07.412903',
-     'Jaffles from the Jaffle Shop are the best! Ordered a flame impala and a tangaroo.'),
+     'Jaffles from the Jaffle Shop are the best! Ordered a flame fandango and a tangaroo.'),
     ('d0000000-0000-4000-8000-000000000302', '6350f2b4-88cb-4522-ab80-bce28ec10633',
      '2025-11-29 13:02:44.518207',
-     'Jaffle Shop again. Ordered a flame impala and a chai and mighty. This place is the worst.');
+     'Jaffle Shop again. Ordered a flame fandango and a chai and mighty. This place is the worst.');
 
 COMMIT;

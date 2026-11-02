@@ -5,9 +5,9 @@ Usage: python3 shift.py <trim-dir> <out-dir>
 
 <trim-dir> holds the seven files trim.py wrote. They are checked against trim.SHA256SUMS
 (the digests of exactly those bytes, embedded below as TRIM_SHA256) before anything is
-read, so this script derives the published data from those bytes or from nothing.
-<out-dir> must not exist or must be empty; the seven published files are written there
-and nothing else.
+read, so this script derives its output from those bytes or from nothing. <out-dir> must
+not exist or must be empty; the seven output files are written there and nothing else.
+They are an intermediate: localize.py reads them, and none of them is published.
 
 The shift is exactly SHIFT_DAYS = 2,555 days (365 weeks), added as whole days to the naive
 datetimes. A whole number of weeks keeps every weekday and, because the values carry no
@@ -93,7 +93,7 @@ def serialize(record):
 
 
 def shift_file(data, name, days, rename):
-    """Return the bytes of one published file made from the bytes of one trim output."""
+    """Return the bytes of one output file made from the bytes of one trim output."""
     _, column, renames = PUBLISH[name]
     if not data.endswith(CRLF):
         raise ShiftError("%s does not end with CRLF" % name)
@@ -131,10 +131,10 @@ def shift_file(data, name, days, rename):
 
 
 def shift(src, dest, days=SHIFT_DAYS, rename=True):
-    """Verify the trim outputs in src, write the published files into dest.
+    """Verify the trim outputs in src, write the output files into dest.
 
     days and rename exist for the tests: days=0 with rename=False must reproduce the
-    input byte for byte. The published files are always made with the defaults."""
+    input byte for byte. The chain always runs this with the defaults."""
     if os.path.exists(dest) and (not os.path.isdir(dest) or os.listdir(dest)):
         raise ShiftError("%s exists and is not an empty directory" % dest)
     inputs = {}

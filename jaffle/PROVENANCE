@@ -80,9 +80,10 @@
 #     end of the window holds no customer whose first order comes after it, so a later
 #     delta adds a new customer as a new row. Every kept tweet's user is one of them;
 #   * raw_stores, raw_products and raw_supplies are jafgen's fixed reference tables,
-#     written whole on every run, and pass through byte for byte. Only Philadelphia
-#     trades in the window; the other five stores open later, as the full year's
-#     Chicago, San Francisco, New Orleans and Los Angeles already did.
+#     written whole on every run, and pass through byte for byte. Only jafgen's
+#     Philadelphia store trades in the window; the other five stores open later, as the
+#     full year's Chicago, San Francisco, New Orleans and Los Angeles already did. Those
+#     are jafgen's names, which step 4 below replaces: the published corpus holds none.
 #
 # Kept rows are the full year's bytes, in its order, CRLF line endings included. Every
 # reference a kept row makes resolves to a kept row. trim.py is deterministic: two runs
@@ -105,38 +106,56 @@
 #   2. derive/trim.py       the first calendar quarter of orders and what they reference
 #                           (this step; checked by derive/reproduce.sh)
 #   3. derive/shift.py      moves every timestamp forward by 2,555 days (365 weeks) and gives
-#                           the files their published names (this step; data/, SHA256SUMS)
-#   4. derive/addresses.py  adds a deterministic address per customer (this step; data/,
+#                           the files their published names (this step;
+#                           derive/shift.SHA256SUMS)
+#   4. derive/localize.py   makes the corpus European: names, stores, VAT, menu, tweets
+#                           (this step; data/, SHA256SUMS)
+#   5. derive/addresses.py  adds a deterministic address per customer (this step; data/,
 #                           SHA256SUMS)
-#   5. data/ + SHA256SUMS   the pinned outputs of the chain (steps 3 and 4 write to them)
-#   6. db/load.sql          the consumer of data/: loads it into PostgreSQL; writes no file
-#   7. db/run2.sql          run 2: hand-authored changes to the loaded source; writes no file
-#   8. expected/counts.yaml the expected results of runs 1 and 2, derived by hand from the
+#   6. data/ + SHA256SUMS   the pinned outputs of the chain (steps 4 and 5 write to them)
+#   7. db/load.sql          the consumer of data/: loads it into PostgreSQL; writes no file
+#   8. db/run2.sql          run 2: hand-authored changes to the loaded source; writes no file
+#   9. expected/counts.yaml the expected results of runs 1 and 2, derived by hand from the
 #                           target's history templates; nothing generates it
 #
 # Step 3 shifts stores.opened_at, orders.ordered_at and tweets.tweeted_at by exactly 2,555
 # days, as whole days on the zone-less timestamps. 2,555 is a whole number of weeks, so
 # every weekday and every wall-clock time is unchanged, daylight saving included. The
 # first order, 2018-09-01T08:20:00, becomes 2025-08-30T08:20:00; the orders end on
-# 2025-11-28; Philadelphia opens on 2025-08-30 and Brooklyn on 2026-03-10. Nothing else
+# 2025-11-28; the first store opens on 2025-08-30 and the second on 2026-03-10. Nothing else
 # changes except the published names: raw_items.csv becomes order_items.csv, the other raw_
 # prefixes drop, and the header columns orders.customer and tweets.user_id become
 # customer_id. shift.py's own SHA-256 is SHIFT_SHA256 below; its input is checked against
-# trim.SHA256SUMS before it reads anything. SHA256SUMS in this directory pins every file in
-# data/, and derive/reproduce.sh requires the shift output to match both exactly.
+# trim.SHA256SUMS before it reads anything, and derive/shift.SHA256SUMS pins what it writes.
+# Its output is an intermediate: it is not committed.
 #
-# Step 4 writes data/customer_addresses.csv (customer_id, street, postal_code, city,
-# country): one synthetic Philadelphia address per customer, in the order of customers.csv.
+# Step 4 makes the corpus European, at jaffle/v3.0.0. derive/localize.py replaces every
+# customer name, the store cities and tax rates, and the product and supply text that read
+# as American or named a real brand or person; it carries the new product names into the
+# tweets, and computes tax_paid and order_total again. A customer's name is drawn from two
+# lists of common names and skips EXCLUDED_NAMES, the names a screen or search turned up. The
+# people are invented, but a name can still match a real person's; the comment on that list
+# says what was screened. Ids, timestamps, row counts, row order, SKUs, prices and subtotals
+# do not change.
+# Amounts are integer euro cents, subtotal excludes VAT, tax_rate is one flat VAT rate per
+# store, tax_paid is exactly subtotal * tax_rate and order_total is subtotal + tax_paid; its
+# docstring says why nothing rounds. Its input is checked against shift.SHA256SUMS before it
+# reads anything, SHA256SUMS in this directory pins every file in data/, and
+# derive/reproduce.sh requires its output to match both data/ and SHA256SUMS exactly. Its
+# own SHA-256 is LOCALIZE_SHA256 below.
+#
+# Step 5 writes data/customer_addresses.csv (customer_id, street, postal_code, city,
+# country): one synthetic Utrecht address per customer, in the order of customers.csv.
 # jafgen wrote none of it. Every choice is a SHA-256 over a named salt and the customer id,
-# so the file is the same on every run, Python version and PYTHONHASHSEED; the street and
-# ZIP lists are embedded in addresses.py. addresses.py checks customers.csv against
-# SHA256SUMS before reading it, and reproduce.sh requires its output to equal the committed
-# file. Its own SHA-256 is ADDRESSES_SHA256 below.
+# so the file is the same on every run, Python version and PYTHONHASHSEED; the invented
+# street names and the postal code parts are embedded in addresses.py. addresses.py checks
+# customers.csv against SHA256SUMS before reading it, and reproduce.sh requires its output
+# to equal the committed file. Its own SHA-256 is ADDRESSES_SHA256 below.
 #
-# Step 5 is complete when the pinned data lands; data/ and SHA256SUMS already cover steps 3
-# and 4.
+# Step 6 is complete when the pinned data lands; data/ and SHA256SUMS already cover steps 4
+# and 5.
 #
-# Step 6 reads data/ and changes none of it. db/load.sql creates the schemas sales,
+# Step 7 reads data/ and changes none of it. db/load.sql creates the schemas sales,
 # catalog and marketing and their seven tables, with a comment on every schema, table and
 # column; copies each file into its table (customers.csv into sales.customers,
 # order_items.csv into sales.order_items, and so on), folds customer_addresses.csv into
@@ -151,17 +170,17 @@
 # constraints, and row counts counted from the files themselves. CI (the load job) runs
 # load.sql and the check against a digest-pinned PostgreSQL 17.
 #
-# Step 7 is not derived from anything: db/run2.sql is written by hand, against the loaded
+# Step 8 is not derived from anything: db/run2.sql is written by hand, against the loaded
 # corpus, and jafgen plays no part in it. It is the stack's goldenset delta carried over to
 # these names, with its dates moved by the same 2,555 days, addresses for its two new
 # customers, and one added change: an existing customer, chosen by the rule its header
-# states, moves to Brooklyn and places that store's first order on its opening day. It
+# states, moves to Rotterdam and places that store's first order on its opening day. It
 # runs in its own transaction and changes the source only; the files in data/ stay as
 # published. db/check_run2.sql checks what row counts cannot show: every order's amounts
-# and tax, run 2's prices, no order before its store opened, Brooklyn's first order, and
-# that the mover's new address is in Brooklyn.
+# and VAT, run 2's prices, no order before its store opened, Rotterdam's first order, and
+# that the mover's new address is in Rotterdam.
 #
-# Step 8, expected/counts.yaml, holds row counts per table for the source and for the
+# Step 9, expected/counts.yaml, holds row counts per table for the source and for the
 # warehouse's staging, history and bridge layers, after run 1 and after run 2, the job
 # they expect (its layer, schema prefix, and each table's type, history mode and event-time
 # column), and the history reveal: the moving customer's id and both addresses, and the
@@ -182,6 +201,7 @@ JAFGEN_COMMAND='jafgen 1 --pre raw'
 JAFGEN_RUN_AT=2026-09-24T04:50:10Z
 TRIM_SHA256=f7c658ff6ed90bdb6cd6d5d58bf0b93900265f43010f1b173deb0774a406a2ca
 TRIM_WINDOW='[2018-09-01T08:20:00, 2018-12-01T00:00:00)'
-SHIFT_SHA256=a1f19abaadb16784b1b2df814b2e07e0a02de74316ddd3cd4ab9ec37b1471a44
+SHIFT_SHA256=4c8c56cc45e9a50a087b52a638634296da0b6ba23ce41dcb5373237a0492902c
 SHIFT_DAYS=2555
-ADDRESSES_SHA256=184320e1c5dcb2e31a7ecefd95f5faba9b2ece2b4f7e06de77f9de0f20569276
+LOCALIZE_SHA256=17a49c6d43479ea1e44e974678ed09419ef0ee3fc9478a9f2348aa7eb1430310
+ADDRESSES_SHA256=bdea84b514b09d338b119d702ca29912a6981624f20f1af0dae81bffdc052914
