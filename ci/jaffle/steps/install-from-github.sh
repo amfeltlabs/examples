@@ -4,14 +4,14 @@
 # This is the install path until the release channel exists (roadmap#763). The releases
 # are private, so it needs the GitHub CLI, gh, signed in with read access to
 # amfeltlabs/agent and amfeltlabs/hub. Once the channel exists, a package manager installs
-# the CLI, and `amfelt plugin install` provisions the plugins; steps/lib.sh says where
-# that one line goes.
+# the CLI, and `amfelt plugin install` provisions the plugins; lib.sh, beside this script,
+# says where that one line goes.
 #
 # Usage:
-#   sh steps/install-from-github.sh cli BIN_DIR
+#   sh ci/jaffle/steps/install-from-github.sh cli BIN_DIR
 #       Installs amfelt, the version project/IMAGE names as AGENT_VERSION, as
 #       BIN_DIR/amfelt. Put BIN_DIR on your PATH.
-#   sh steps/install-from-github.sh plugins PROJECT WORKSPACE
+#   sh ci/jaffle/steps/install-from-github.sh plugins PROJECT WORKSPACE
 #       Installs every plugin the project file PROJECT declares, at the version it
 #       declares, where the agent looks for installed plugins in the workspace directory
 #       WORKSPACE: WORKSPACE/plugins/<category>/amfelt/<plugin>/v<version>/. The agent's
@@ -22,7 +22,7 @@
 # A binary that is already installed at that version is left as it is.
 set -eu
 
-jaffle=$(cd "$(dirname "$0")/.." && pwd)
+jaffle=$(cd "$(dirname "$0")/../../../jaffle" && pwd)
 
 fail() {
     printf 'error: %s\n' "$*" >&2

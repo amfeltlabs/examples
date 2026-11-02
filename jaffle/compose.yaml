@@ -42,8 +42,11 @@ services:
   # A DuckDB shell on the warehouse the agent writes in work/warehouse/, read-only and
   # without a network. It runs as root inside the container, the image's default, with one
   # capability, DAC_READ_SEARCH, so it reads the file whichever user wrote it and needs no
-  # user id from you. It may not open the file while the agent writes to it: DuckDB allows
-  # one writer and no readers beside it.
+  # user id from you. Close it before the next load: DuckDB allows one writer and no reader
+  # beside it. On Linux a load therefore fails while this shell holds the file. Docker Desktop
+  # on macOS does not pass the shell's lock from its container to the agent on your machine,
+  # so there this shell does not block the load. What it shows afterward cannot be trusted:
+  # it may show old rows with no error, or fail. Open a new shell to read after a load.
   duckdb:
     image: docker.io/duckdb/duckdb:1.5.6@sha256:6f42e04517e2445b525d105dcfd12ef774c30d29f7e124c72daaf655fcffc0bb
     profiles: [tools]

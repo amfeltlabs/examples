@@ -1,11 +1,12 @@
 #!/bin/sh
 # shellcheck disable=SC2030,SC2031 # with_counts sets counts in a subshell on purpose
-# Run the Jaffle tutorial as a reader runs it, and assert what it publishes.
+# Run the CLI-driven Jaffle steps, the engine's regression proof on this dataset, and assert
+# what they publish. No reader runs them; the tutorial is at amfelt.com/docs/quickstart/.
 #
-# Usage: sh jaffle/steps/ci/tutorial.sh [JAFFLE_DIR]
+# Usage: sh ci/jaffle/tutorial.sh [JAFFLE_DIR]
 #
-# The steps in JAFFLE_DIR/steps run unchanged, in the reader's order, with the amfelt CLI
-# on the PATH, as a reader installs it. This script adds no step of its own to the
+# The steps of the ref in JAFFLE_DIR run unchanged, in their numbered order, with the amfelt
+# CLI on the PATH, as the CI job installs it. This script adds no step of its own to the
 # tutorial; around the steps it asserts, from its own queries:
 #
 #   - before step 1, that the amfelt on the PATH reports project/IMAGE's AGENT_VERSION;
@@ -29,7 +30,7 @@
 #     the agent wrote are readable by their owner only, and the DuckDB shell still reads the
 #     same counts, with no user id passed to it. A ref from before the reader's Compose path
 #     skips this, and says so: compose-alone.sh decides;
-#   - a reader re-running step 4, run 1's sync included: the counts stay the same (plan
+#   - step 4 run a second time, run 1's sync included: the counts stay the same (plan
 #     Review Focus 3);
 #   - a reader leaving a DuckDB shell open: the sync fails, and its error output names the
 #     lock (Review Focus 4); the warehouse is unchanged afterwards. On Linux only, and so
@@ -51,9 +52,11 @@
 # that reason. Without a second engine run.
 #
 # JAFFLE_DIR is the jaffle/ directory whose steps, data and expected counts are tested; it
-# defaults to the one this script sits in. CI passes the tree of the ref it tests, so this
-# script can test the steps of an earlier commit, such as a release tag. Its repository
-# needs its full history: compose-alone.sh reads it.
+# defaults to the one in this script's repository. CI passes the tree of the ref it tests,
+# so this script can test the steps of an earlier commit, such as a release tag. Its
+# repository needs its full history: compose-alone.sh reads it. steps-dir.sh finds that
+# ref's steps, which sit in jaffle/steps/ on the released tags; a message here that names
+# steps/NAME means that directory.
 #
 # TUTORIAL_COUNTS names the counts file the assertions read, by default
 # JAFFLE_DIR/expected/counts.yaml. A copy with one count changed must turn the run red;
@@ -70,7 +73,8 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-jaffle=$(cd "${1:-$here/../..}" && pwd)
+jaffle=$(cd "${1:-$here/../../jaffle}" && pwd)
+steps=$(sh "$here/steps-dir.sh" "$jaffle") || exit 1
 counts=${TUTORIAL_COUNTS:-$jaffle/expected/counts.yaml}
 if [ "$counts" = "$jaffle/expected/counts.yaml" ]; then
     counts_name=expected/counts.yaml
@@ -107,21 +111,21 @@ identifier() {
     printf '%s\n' "$1"
 }
 
-# run_step NAME: run one of the reader's steps, unchanged.
+# run_step NAME: run one of the ref's steps, unchanged.
 run_step() {
     say "step $1"
-    "$jaffle/steps/$1"
+    "$steps/$1"
 }
 
 # with_lib SHELL-CODE: run SHELL-CODE with the steps' own lib.sh sourced, as if it were a
 # step: \$0 names a file in steps/, so lib.sh moves to jaffle/ as it does for every step. The code can then use source_url and the other helpers unchanged.
 with_lib() {
     # shellcheck disable=SC2016 # expanded by the inner shell
-    sh -c 'set -eu; . "$(dirname "$0")/lib.sh"; '"$1" "$jaffle/steps/tutorial-ci"
+    sh -c 'set -eu; . "$(dirname "$0")/lib.sh"; '"$1" "$steps/tutorial-ci"
 }
 
 # Run 1's sync, as steps/04-run1.sh spells it: the preflight checks that both lines still
-# appear there verbatim, so Review Focus 4 tests the command a reader runs.
+# appear there verbatim, so Review Focus 4 tests the command step 4 runs.
 # shellcheck disable=SC2016 # expanded by with_lib's shell
 sync_url_line='url=$(source_url)'
 # shellcheck disable=SC2016 # expanded by with_lib's shell
@@ -384,7 +388,7 @@ check_image_contents() {
     check_probe "$tmp/image.out" "$ref" "$want_agent" "$want_pg" "$want_duck"
 }
 
-# check_install_contents IMAGE-FILE: probe what a reader's steps run with: the amfelt on
+# check_install_contents IMAGE-FILE: probe what the steps run with: the amfelt on
 # the PATH and the plugin versions steps 2 and 3 installed in the agent's workspace,
 # JAFFLE_DIR/work/.amfelt, where the agent run in work/ looks for them. Check them with
 # check_probe against the versions IMAGE-FILE names, as check_image_contents checks the image.
@@ -598,7 +602,7 @@ cleanup() {
     close_reader
     if [ "$started" -eq 1 ]; then
         say "cleaning up after a failure: steps/99-reset.sh"
-        "$jaffle/steps/99-reset.sh" || true
+        "$steps/99-reset.sh" || true
     fi
     if [ "$created_env" -eq 1 ]; then
         rm -f "$jaffle/.env"
@@ -637,8 +641,8 @@ from_run2=$(sed -n "s/^DELETE FROM sales\.$reveal_object WHERE $key = '\([0-9a-f
 echo "ok: db/run2.sql deletes $deleted, the deleted customer of the reveal"
 
 for line in "$sync_url_line" "$sync_line"; do
-    grep -qxF -- "$line" "$jaffle/steps/04-run1.sh" \
-        || die "steps/04-run1.sh no longer holds the line: $line; Review Focus 4 would test a command no reader runs"
+    grep -qxF -- "$line" "$steps/04-run1.sh" \
+        || die "steps/04-run1.sh no longer holds the line: $line; Review Focus 4 would test a command step 4 does not run"
 done
 echo "ok: the sync of Review Focus 4 is the one steps/04-run1.sh runs"
 
@@ -728,9 +732,9 @@ private_warehouse() {
 }
 compose_alone_check "$jaffle" "the DuckDB shell on a warehouse only its owner can read" private_warehouse
 
-# --- Review Focus 3: the reader runs run 1's sync again ----------------------------------------
+# --- Review Focus 3: run 1's sync runs again -----------------------------------------------------
 
-say "Review Focus 3: the reader runs step 4 again, on the unchanged source"
+say "Review Focus 3: step 4 runs again, on the unchanged source"
 run_step 04-run1.sh
 snapshot >"$tmp/repeat.counts"
 diff -u "$tmp/run1.counts" "$tmp/repeat.counts" \

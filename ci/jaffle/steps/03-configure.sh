@@ -4,8 +4,8 @@
 #
 # By default this step builds the project with the agent's commands, one at a time, and
 # installs the plugins it declares.
-# Run it as QUICK=1 steps/03-configure.sh to copy the ready-made project from project/
-# instead. Either way, the step ends by checking the project against the settings
+# Run it as QUICK=1 ci/jaffle/steps/03-configure.sh to copy the ready-made project from
+# project/ instead. Either way, the step ends by checking the project against the settings
 # expected/counts.yaml was made for, and against the ready-made one.
 set -eu
 # shellcheck source=lib.sh
@@ -103,7 +103,7 @@ step "Checking that work/ holds the same project as project/"
 # 127.0.0.1 and the port .env's SOURCE_PORT publishes; the ready-made contract records
 # source and 5432, the database's name and port on the container network, where the
 # stack's capture reads it. So the comparison maps this machine's values onto those.
-port=$(docker compose port source 5432) || fail "the source database publishes no port; run steps/01-start.sh first"
+port=$(docker compose port source 5432) || fail "the source database publishes no port; run ci/jaffle/steps/01-start.sh first"
 port=${port##*:}
 same() {
     grep -v -E '^(id|createdAt|contractCreatedTs):|^  introspectedAt:' "$1" \
