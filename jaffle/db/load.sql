@@ -36,14 +36,14 @@
 --
 -- Types come from profiling the files, not from defaults:
 --   * ids that are UUIDs in every row are uuid; product skus and supply ids are text
---   * money is integer cents, exactly as the files write it (1100 = 11.00)
+--   * money is integer euro cents, exactly as the files write it (1100 = EUR 11.00)
 --   * timestamps carry no offset in the files, so they are timestamp WITHOUT time zone;
 --     adding a zone here would invent a fact the source never stated. tweeted_at has
 --     microseconds; ordered_at and opened_at are whole seconds
---   * tax_rate is numeric(6,4): its longest value is 0.0625. The scale is fixed, so a
---     file value of 0.06 reads back as 0.0600, equal in value, not in text
+--   * tax_rate is numeric(6,4). The scale is fixed, so a file value of 0.09 reads back as
+--     0.0900, equal in value, not in text
 --   * perishable is boolean; the files write True and False
---   * postal_code is text: a ZIP code is an identifier, not a number, and keeps its digits
+--   * postal_code is text: a Dutch postal code holds a space and letters
 -- Non-key columns stay nullable. The files hold no empty field at all, so the load
 -- produces no NULL; that is a fact about these rows, not a contract a later insert has to
 -- honor.
@@ -115,10 +115,10 @@ CREATE TABLE sales.customers (
 COMMENT ON TABLE sales.customers IS 'One row per person who has placed one or more orders';
 COMMENT ON COLUMN sales.customers.id IS 'Unique identifier for the customer.';
 COMMENT ON COLUMN sales.customers.name IS 'Customer name as recorded by the source.';
-COMMENT ON COLUMN sales.customers.street IS 'House number and street name of the customer''s address. Synthetic: a real Philadelphia street name with a generated house number, not a real person''s address.';
-COMMENT ON COLUMN sales.customers.postal_code IS 'Postal code of the customer''s address: a 5-digit US ZIP code. Synthetic: a real Philadelphia ZIP code, assigned independently of the street.';
+COMMENT ON COLUMN sales.customers.street IS 'Street name and house number of the customer''s address. Synthetic: an invented street name with a generated house number, not a real address.';
+COMMENT ON COLUMN sales.customers.postal_code IS 'Postal code of the customer''s address, in the Dutch format: four digits, a space and two letters. Synthetic: assigned independently of the street.';
 COMMENT ON COLUMN sales.customers.city IS 'City of the customer''s address. Synthetic, like the rest of the address.';
-COMMENT ON COLUMN sales.customers.country IS 'Country of the customer''s address, as an ISO 3166-1 alpha-2 code (US). Synthetic, like the rest of the address.';
+COMMENT ON COLUMN sales.customers.country IS 'Country of the customer''s address, as an ISO 3166-1 alpha-2 code (NL). Synthetic, like the rest of the address.';
 
 CREATE TABLE sales.stores (
     id        uuid NOT NULL,
@@ -130,7 +130,7 @@ COMMENT ON TABLE sales.stores IS 'The stores where orders are placed';
 COMMENT ON COLUMN sales.stores.id IS 'Unique identifier for the store.';
 COMMENT ON COLUMN sales.stores.name IS 'Store name as recorded by the source.';
 COMMENT ON COLUMN sales.stores.opened_at IS 'Store opening timestamp, stored without a time zone. A date after the order window, the span of sales.orders.ordered_at, is a planned opening: that store has not traded yet.';
-COMMENT ON COLUMN sales.stores.tax_rate IS 'Tax rate expressed as a decimal fraction; 0.06 represents 6%.';
+COMMENT ON COLUMN sales.stores.tax_rate IS 'VAT rate of the store, one flat rate for its whole menu, expressed as a decimal fraction; 0.09 represents 9%.';
 
 CREATE TABLE sales.orders (
     id          uuid NOT NULL,
@@ -146,9 +146,9 @@ COMMENT ON COLUMN sales.orders.id IS 'Unique identifier for the order.';
 COMMENT ON COLUMN sales.orders.customer_id IS 'Customer who placed the order; references sales.customers.id.';
 COMMENT ON COLUMN sales.orders.store_id IS 'Store where the order was placed; references sales.stores.id.';
 COMMENT ON COLUMN sales.orders.ordered_at IS 'Order placement timestamp, stored without a time zone.';
-COMMENT ON COLUMN sales.orders.subtotal IS 'Order subtotal before tax, in integer cents.';
-COMMENT ON COLUMN sales.orders.tax_paid IS 'Tax charged on the order, in integer cents.';
-COMMENT ON COLUMN sales.orders.order_total IS 'Total charged for the order, in integer cents: subtotal + tax_paid.';
+COMMENT ON COLUMN sales.orders.subtotal IS 'Order subtotal excluding VAT, in integer euro cents.';
+COMMENT ON COLUMN sales.orders.tax_paid IS 'VAT charged on the order, in integer euro cents: subtotal * the tax_rate of the store.';
+COMMENT ON COLUMN sales.orders.order_total IS 'Total charged for the order including VAT, in integer euro cents: subtotal + tax_paid.';
 
 CREATE TABLE sales.order_items (
     id       uuid NOT NULL,
@@ -171,7 +171,7 @@ COMMENT ON TABLE catalog.products IS 'One row per SKU sold in the stores';
 COMMENT ON COLUMN catalog.products.sku IS 'Stock-keeping unit identifying the product.';
 COMMENT ON COLUMN catalog.products.name IS 'Name of the product on the menu.';
 COMMENT ON COLUMN catalog.products.type IS 'Product category recorded by the source.';
-COMMENT ON COLUMN catalog.products.price IS 'Unit price of the product, in integer cents.';
+COMMENT ON COLUMN catalog.products.price IS 'Unit price of the product excluding VAT, in integer euro cents.';
 COMMENT ON COLUMN catalog.products.description IS 'Source-provided description of the product.';
 
 -- A supply is used by several products, so its id repeats: (id, sku) is the key.
@@ -186,7 +186,7 @@ COMMENT ON TABLE catalog.supplies IS 'One row per supply per SKU that uses it';
 COMMENT ON COLUMN catalog.supplies.id IS 'Identifier for a supply; together with sku, uniquely identifies a supply-to-product row.';
 COMMENT ON COLUMN catalog.supplies.sku IS 'Product SKU using the supply; references catalog.products.sku.';
 COMMENT ON COLUMN catalog.supplies.name IS 'Name of the supply used by the product.';
-COMMENT ON COLUMN catalog.supplies.cost IS 'Cost of the supply, in integer cents.';
+COMMENT ON COLUMN catalog.supplies.cost IS 'Cost of the supply, in integer euro cents.';
 COMMENT ON COLUMN catalog.supplies.perishable IS 'Whether the supply is marked perishable by the source.';
 
 CREATE TABLE marketing.tweets (

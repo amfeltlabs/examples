@@ -55,20 +55,22 @@ class Coverage(Case):
 class WellFormed(Case):
     def test_every_row(self):
         for r in self.rows:
-            number, _, street = r["street"].partition(" ")
-            self.assertTrue(number.isdigit() and 1 <= int(number) <= 4999, r)
+            street, _, number = r["street"].partition(" ")
+            self.assertTrue(number.isdigit() and 1 <= int(number) <= addresses.HOUSE_MAX, r)
             self.assertEqual(str(int(number)), number, r)
             self.assertIn(street, addresses.STREETS, r)
-            self.assertIn(r["postal_code"], addresses.ZIP_CODES, r)
-            self.assertEqual(r["city"], "Philadelphia")
-            self.assertEqual(r["country"], "US")
+            digits, _, letters = r["postal_code"].partition(" ")
+            self.assertIn(int(digits), addresses.POSTAL_DIGITS, r)
+            self.assertIn(letters, addresses.POSTAL_LETTERS, r)
+            self.assertEqual(r["city"], "Utrecht")
+            self.assertEqual(r["country"], "NL")
 
     def test_lists_are_sound(self):
         self.assertEqual(len(set(addresses.STREETS)), len(addresses.STREETS))
-        self.assertEqual(len(set(addresses.ZIP_CODES)), len(addresses.ZIP_CODES))
-        for z in addresses.ZIP_CODES:
-            self.assertRegex(z, r"^\d{5}$")
-            self.assertTrue(19102 <= int(z) <= 19154, z)
+        self.assertEqual(len(set(addresses.POSTAL_LETTERS)), len(addresses.POSTAL_LETTERS))
+        for pair in addresses.POSTAL_LETTERS:
+            self.assertRegex(pair, r"^[A-Z]{2}$")
+            self.assertNotIn(pair, ("SA", "SD", "SS"))
 
     def test_file_conventions(self):
         with open(os.path.join(self.out, addresses.OUTPUT), "rb") as fh:
@@ -121,9 +123,9 @@ class Pinned(Case):
 
 class Distribution(Case):
     def test_not_degenerate(self):
-        self.assertGreater(len({r["street"].partition(" ")[2] for r in self.rows}), 1)
-        self.assertGreater(len({r["postal_code"] for r in self.rows}), 1)
         self.assertGreater(len({r["street"].partition(" ")[0] for r in self.rows}), 1)
+        self.assertGreater(len({r["postal_code"] for r in self.rows}), 1)
+        self.assertGreater(len({r["street"].partition(" ")[2] for r in self.rows}), 1)
 
 
 class Refusal(unittest.TestCase):
@@ -139,7 +141,7 @@ class Refusal(unittest.TestCase):
         with open(path, "rb") as fh:
             data = fh.read()
         with open(path, "wb") as fh:
-            fh.write(data.replace(b"Angela Moyer", b"Angela Moyed", 1))
+            fh.write(data.replace(b"Nikos Lefebvre", b"Nikos Lefebvrf", 1))
         out = os.path.join(self.tmp, "out")
         with self.assertRaises(addresses.AddressError):
             addresses.generate(os.path.join(root, "data"), out)

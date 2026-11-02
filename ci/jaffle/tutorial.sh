@@ -536,13 +536,13 @@ run2_controls() {
     python3 "$jaffle/expected/counts.py" validate "$count_copy" >/dev/null
     must_fail "the run 2 counts with customers' history changed" "2 of 28 warehouse counts differ" \
         with_counts "$count_copy" assert_counts run2 "$tmp/run2.counts"
-    # The mover's closed version, the address she lived at before: its city.
-    city_copy=$(perturb city '/^  before: /s/city: "[^"]*"/city: "Pittsburgh"/' "$counts")
+    # The mover's closed version, the address he lived at before: its city.
+    city_copy=$(perturb city '/^  before: /s/city: "[^"]*"/city: "Groningen"/' "$counts")
     python3 "$jaffle/expected/counts.py" validate "$city_copy" >/dev/null
     must_fail "the mover's closed-row city changed in the counts file" "differ from the reveal" \
         with_counts "$city_copy" check_reveal
     # The deleted customer's closed version: its city.
-    deleted_copy=$(perturb deleted '/^    before: /s/city: "[^"]*"/city: "Pittsburgh"/' "$counts")
+    deleted_copy=$(perturb deleted '/^    before: /s/city: "[^"]*"/city: "Groningen"/' "$counts")
     python3 "$jaffle/expected/counts.py" validate "$deleted_copy" >/dev/null
     must_fail "the deleted customer's closed-row city changed in the counts file" "differ from the reveal" \
         with_counts "$deleted_copy" check_reveal
@@ -550,9 +550,9 @@ run2_controls() {
     # these change the saved rows instead: the open history row, then the bridge_act row.
     after_city=$(get reveal.after.city)
     rows_control open-city "the mover's open history row in another city" mover \
-        "/^history|.*|open\$/s/|$after_city|/|Pittsburgh|/"
+        "/^history|.*|open\$/s/|$after_city|/|Groningen|/"
     rows_control bridge-city "the mover's bridge_act row in another city" mover \
-        "/^bridge_act|/s/|$after_city|/|Pittsburgh|/"
+        "/^bridge_act|/s/|$after_city|/|Groningen|/"
 }
 
 # work_files: the files in work/, but for the tracked work/warehouse/.gitkeep.
