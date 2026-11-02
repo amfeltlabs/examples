@@ -62,7 +62,7 @@ jobs:
           echo "ok: $TAG is a $kind of $(head -n 1 jaffle/VERSION), at $sha"
 
   # The same jobs the pull request required: lint, commitlint, reproduce, addresses, load,
-  # asset, project and tutorial. A tag on a broken tree cannot publish. The tutorial job
+  # asset, compose, project and tutorial. A tag on a broken tree cannot publish. The tutorial job
   # pulls the private agent image, so the call grants it packages: read, and mints a token
   # of the org App to install the CLI and plugins, so the call passes that App's two
   # secrets, and no other.

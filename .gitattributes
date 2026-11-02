@@ -1,0 +1,4 @@
+# Every file is checked out as committed, on every system. With core.autocrlf on, a
+# line-ending conversion breaks jaffle/db/initdb.sh in the Linux container. The CSVs in
+# jaffle/data/ are committed with CRLF, so normalizing to LF would change them.
+* -text

@@ -25,6 +25,9 @@
 #     contract it wrote records that port, so step 3's mapping of the port onto the
 #     ready-made contract's was exercised; the source is then published on .env's port
 #     again and step 3 run once more before step 4;
+#   - a reader whose umask keeps files private: after run 1, work/warehouse/ and the file
+#     the agent wrote are readable by their owner only, and the DuckDB shell still reads the
+#     same counts, with no user id passed to it;
 #   - a reader re-running step 4, run 1's sync included: the counts stay the same (plan
 #     Review Focus 3);
 #   - a reader leaving a DuckDB shell open: the sync fails, and its error output names the
@@ -58,8 +61,9 @@
 # with read access to amfeltlabs/hub.
 #
 # Docker: the compose project is amfelt-jaffle. The script refuses to start while any
-# container, volume or network of that project exists, or while work/ or warehouse/
-# exists, so everything it removes is something it made.
+# container, volume or network of that project exists, or while warehouse/ or any file in
+# work/ but the tracked work/warehouse/.gitkeep exists, so everything it removes is
+# something it made.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -104,8 +108,7 @@ run_step() {
 }
 
 # with_lib SHELL-CODE: run SHELL-CODE with the steps' own lib.sh sourced, as if it were a
-# step: \$0 names a file in steps/, so lib.sh moves to jaffle/ and checks .env as it does
-# for every step. The code can then use source_url and the other helpers unchanged.
+# step: \$0 names a file in steps/, so lib.sh moves to jaffle/ as it does for every step. The code can then use source_url and the other helpers unchanged.
 with_lib() {
     # shellcheck disable=SC2016 # expanded by the inner shell
     sh -c 'set -eu; . "$(dirname "$0")/lib.sh"; '"$1" "$jaffle/steps/tutorial-ci"
@@ -542,6 +545,11 @@ run2_controls() {
         "/^bridge_act|/s/|$after_city|/|Pittsburgh|/"
 }
 
+# work_files: the files in work/, but for the tracked work/warehouse/.gitkeep.
+work_files() {
+    [ ! -d "$jaffle/work" ] || find "$jaffle/work" ! -type d ! -path "$jaffle/work/warehouse/.gitkeep" | head -n 5
+}
+
 # project_resources: the ids of every container, volume and network of the project.
 project_resources() {
     docker ps -aq --filter "label=com.docker.compose.project=$project"
@@ -638,9 +646,8 @@ image_control duckdb "the DuckDB plugin version changed" \
 say "checking that nothing of the compose project $project exists yet"
 leftover=$(project_resources)
 [ -z "$leftover" ] || die "the compose project $project already has containers, volumes or networks; they are not this run's, so it stops"
-for dir in work warehouse; do
-    [ ! -e "$jaffle/$dir" ] || die "$jaffle/$dir exists; run steps/99-reset.sh first"
-done
+[ ! -e "$jaffle/warehouse" ] || die "$jaffle/warehouse exists; run steps/99-reset.sh first"
+[ -z "$(work_files)" ] || die "$jaffle/work holds files; run steps/99-reset.sh first"
 if [ -e "$jaffle/.env" ]; then
     cmp -s "$jaffle/.env" "$jaffle/.env.example" \
         || die "$jaffle/.env differs from .env.example, so the run would not use the published settings"
@@ -696,6 +703,17 @@ run_step 04-run1.sh
 say "asserting run 1's counts"
 snapshot >"$tmp/run1.counts"
 assert_counts run1 "$tmp/run1.counts"
+
+# --- A reader whose umask keeps files private --------------------------------------------------
+
+# The agent wrote the file as this user, and the DuckDB shell gets no user id. With these
+# modes a shell running as any other user, without a capability to read past them, fails.
+say "the DuckDB shell on a warehouse only its owner can read"
+chmod -R go-rwx "$jaffle/work/warehouse"
+snapshot >"$tmp/private.counts"
+diff -u "$tmp/run1.counts" "$tmp/private.counts" \
+    || die "the DuckDB shell read something else from a warehouse only its owner can read"
+echo "ok: the DuckDB shell read all 28 counts from a file only its owner can read"
 
 # --- Review Focus 3: the reader runs run 1's sync again ----------------------------------------
 
@@ -764,10 +782,11 @@ for dir in work work/warehouse; do
     [ -d "$jaffle/$dir" ] || die "step 1 did not make $dir/"
 done
 [ ! -e "$jaffle/warehouse" ] || die "warehouse/ is still there after the reset"
-# Step 1 makes the folders, work/warehouse/ among them; nothing else may be in them, not
-# even the plugins step 2 installed in work/.amfelt.
-leftover=$(find "$jaffle/work" ! -type d | head -n 5)
+# The folders are there; nothing else may be in them but the tracked .gitkeep, not even the
+# plugins step 2 installed in work/.amfelt.
+leftover=$(work_files)
 [ -z "$leftover" ] || die "work/ still holds files after the reset: $leftover"
+[ -f "$jaffle/work/warehouse/.gitkeep" ] || die "steps/99-reset.sh removed the tracked work/warehouse/.gitkeep"
 assert_source run1
 echo "ok: after the reset, step 1 holds the freshly loaded source and an empty work/"
 

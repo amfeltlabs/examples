@@ -365,6 +365,26 @@ jobs:
           diff -u "$RUNNER_TEMP/run2.expected" "$RUNNER_TEMP/run2.actual"
           echo "ok: the source matches runs.run2.source, the after address, and the deletion"
 
+  # Runs the reader's Compose path from a fresh clone, with no settings file and no agent:
+  # the source starts, db/run2.sql applies and is refused the second time, the reload
+  # works, SOURCE_PORT moves the port, and the DuckDB shell reads a file only its owner
+  # can read.
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Run the reader's Compose path from a fresh clone
+        run: sh jaffle/steps/ci/fresh-clone.sh
+
   # Validates the tutorial's ready-made project file, jaffle/project/amfelt.yaml, against
   # the project-file schema, then checks it is the project the expected counts were made
   # for: its job's layer, schema prefix and select.objects equal counts.yaml's job block,
@@ -396,7 +416,7 @@ jobs:
 
   # Runs the tutorial as a reader does: jaffle/steps/01-06 and 99, unchanged, with the
   # amfelt CLI installed on the runner and on the PATH, the source and the DuckDB shell run
-  # through jaffle/compose.yaml, and the DuckDB container running as the runner's user.
+  # through jaffle/compose.yaml.
   # jaffle/steps/ci/tutorial.sh asserts, from its
   # own queries, every warehouse count of both runs and the history reveal against
   # jaffle/expected/counts.yaml; that a second sync on an unchanged source changes no

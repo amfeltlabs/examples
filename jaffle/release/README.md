@@ -32,7 +32,7 @@ version without `v` or `-rc.N`.
 
 3. The `release-jaffle` workflow refuses the tag unless its commit is on `main` and its version
    matches `VERSION`. It then runs the CI jobs on the tag (lint, commitlint, reproduce, addresses,
-   load, asset, project and tutorial), builds the asset and creates the release. A failing check
+   load, asset, compose, project and tutorial), builds the asset and creates the release. A failing check
    publishes nothing.
 4. Verify the release:
 

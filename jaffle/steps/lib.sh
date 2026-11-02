@@ -1,5 +1,4 @@
-# Sourced by every step. It moves to jaffle/, checks for .env, and defines the helpers the
-# steps share. It sets no shell options: each step sets its own.
+# Sourced by every step. It moves to jaffle/, and defines the helpers the steps share. It sets no shell options: each step sets its own.
 #
 # The agent is the amfelt CLI on your PATH. The steps run it in work/, your project
 # directory, as `(cd work && amfelt ...)`, so its paths are relative to work/ and the
@@ -7,11 +6,6 @@
 # shellcheck shell=sh
 
 cd "$(dirname "$0")/.." || exit 1
-
-if [ ! -f .env ]; then
-    echo "error: jaffle/.env is missing; create it with: cp .env.example .env" >&2
-    exit 1
-fi
 
 # The agent's workspace, where it looks for installed plugins, is .amfelt in the directory
 # it runs in; --amfelt-dir, AMFELT_DIR, INFUSAL_DIR or a settings file of the agent moves
@@ -21,11 +15,6 @@ fi
 # lookup of the host) that never names the directory. So run the steps without them. The
 # steps clear the two variables from their own environment here.
 unset AMFELT_DIR INFUSAL_DIR
-
-# The DuckDB container runs as you, so it can read the warehouse the agent wrote as you.
-HOST_UID=$(id -u)
-HOST_GID=$(id -g)
-export HOST_UID HOST_GID
 
 # Compose prints progress lines for every short-lived container; they would bury the
 # output. The slow commands of steps 1 and 99 show progress when you watch a terminal.
@@ -39,8 +28,8 @@ else
 fi
 
 # source_url: how the agent reaches the source: the port compose publishes on 127.0.0.1,
-# with the demo login. The password is the one compose gives the database, read from .env
-# through compose itself and encoded for the URL. The agent warns that the URL carries a
+# with the demo login. The password is the one compose gives the database, read through
+# compose itself and encoded for the URL. The agent warns that the URL carries a
 # login; for this local demo database that is expected.
 source_url() {
     password=$(docker compose config --format json | python3 -c '
