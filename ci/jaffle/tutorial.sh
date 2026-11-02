@@ -734,7 +734,7 @@ compose_alone_check "$jaffle" "the DuckDB shell on a warehouse only its owner ca
 
 # --- Review Focus 3: run 1's sync runs again -----------------------------------------------------
 
-say "Review Focus 3: the reader runs step 4 again, on the unchanged source"
+say "Review Focus 3: step 4 runs again, on the unchanged source"
 run_step 04-run1.sh
 snapshot >"$tmp/repeat.counts"
 diff -u "$tmp/run1.counts" "$tmp/repeat.counts" \

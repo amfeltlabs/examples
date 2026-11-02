@@ -38,7 +38,7 @@ The agent writes its DuckDB file to `work/warehouse/`, which is there after you 
 docker compose run --rm duckdb
 ```
 
-Close it before the next load: DuckDB allows one writer and no reader beside it. On Linux a load therefore fails while the shell holds the file. Docker Desktop on macOS does not pass the shell's lock from its container to the agent on your machine, so there the load runs anyway, under the open shell.
+Close it before the next load: DuckDB allows one writer and no reader beside it. On Linux a load therefore fails while the shell holds the file. Docker Desktop on macOS does not pass the shell's lock from its container to the agent on your machine, so there the load runs anyway, under the open shell, which may then show old rows with no error, or fail. Open a new shell to read after a load.
 
 ## Clean up
 
