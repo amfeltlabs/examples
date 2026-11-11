@@ -19,8 +19,8 @@ The live run binds two repositories it creates on the stack's git host (Forgejo)
 organization repository holding jaffle/org/amfelt-org.yaml as org/amfelt-org.yaml, which
 the organization's binding names through PUT /v1/orgs/{slug}/binding, and a project
 repository whose root holds the project of jaffle/project/ with the contract the first
-annotated harvest stored (ADR-168 Open Question 22, interim). It moves nothing in this
-repository. The organization repository's config.git_repo row is seeded with one SQL
+annotated harvest stored (ADR-168 Open Question 22, interim). It changes no tracked file
+of this repository. The organization repository's config.git_repo row is seeded with one SQL
 INSERT in the stack's control database, because no route registers a customer-connected
 repository that no project environment binds (ADR-168 Open Question 31, the recorded gap):
 the row copies the URL of the organization repository and the credential reference of
@@ -785,17 +785,21 @@ def person_merges(stack, pr):
     ok(f"a person pushed the projections block onto #{pr['number']} and merged it with a merge commit")
 
 
+def check_releases(values, api_version, agent_version):
+    """Refuse an api older than API_VERSION or an agent older than AGENT_VERSION; a version
+    that cannot be read counts as older."""
+    for name, got in (("API_VERSION", api_version),):
+        if (version_tuple(got) ) < version_tuple(values[name]):
+            raise Fail(f"the stack runs {got!r}, older than {name} {values[name]}")
+
+
 def setup(stack):
     say("Checking the releases the stack runs")
-    values = read_requires()
     _, health = stack.api.call("GET", "/v1/health")
-    if (version_tuple(health.get("version")) or (0, 0, 0)) < version_tuple(values["API_VERSION"]):
-        raise Fail(f"the api is {health.get('version')}, older than API_VERSION {values['API_VERSION']}")
     agent = subprocess.run([os.environ.get("AMFELT_BIN", "amfelt"), "version"], capture_output=True,
-                           text=True, check=False).stdout
-    if (version_tuple(agent) or (0, 0, 0)) < version_tuple(values["AGENT_VERSION"]):
-        raise Fail(f"the agent is {agent.strip()!r}, older than AGENT_VERSION {values['AGENT_VERSION']}")
-    ok(f"api {health.get('version')}, {agent.strip()}")
+                           text=True, check=False).stdout.strip()
+    check_releases(read_requires(), health.get("version"), agent)
+    ok(f"api {health.get('version')}, {agent}")
 
     say("Creating the organization repository and the project repository")
     org_url = stack.create_repo(stack.org_repo)

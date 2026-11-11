@@ -106,6 +106,15 @@ class Requires(unittest.TestCase):
             with self.subTest(text=text), self.assertRaises(scenario.Fail):
                 scenario.read_requires(self.read(text))
 
+    def test_an_older_stack_is_refused(self):
+        values = {"API_VERSION": "6.30.0", "AGENT_VERSION": "5.21.0"}
+        scenario.check_releases(values, "6.30.0", "amfelt 5.21.0")
+        scenario.check_releases(values, "v6.31.2", "amfelt 5.22.0 (abc)")
+        for api, agent in (("6.29.9", "amfelt 5.21.0"), ("6.30.0", "amfelt 5.20.6"), ("dev", "amfelt 5.21.0"),
+                           ("6.30.0", "")):
+            with self.subTest(api=api, agent=agent), self.assertRaises(scenario.Fail):
+                scenario.check_releases(values, api, agent)
+
     def test_versions_compare_as_numbers(self):
         self.assertLess(scenario.version_tuple("v6.9.0"), scenario.version_tuple("6.10.0"))
         self.assertEqual(scenario.version_tuple("amfelt 5.21.0 (abc)"), (5, 21, 0))
