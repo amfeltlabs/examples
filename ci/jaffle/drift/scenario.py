@@ -788,8 +788,8 @@ def person_merges(stack, pr):
 def check_releases(values, api_version, agent_version):
     """Refuse an api older than API_VERSION or an agent older than AGENT_VERSION; a version
     that cannot be read counts as older."""
-    for name, got in (("API_VERSION", api_version),):
-        if (version_tuple(got) ) < version_tuple(values[name]):
+    for name, got in (("API_VERSION", api_version), ("AGENT_VERSION", agent_version)):
+        if (version_tuple(got) or (0, 0, 0)) < version_tuple(values[name]):
             raise Fail(f"the stack runs {got!r}, older than {name} {values[name]}")
 
 
