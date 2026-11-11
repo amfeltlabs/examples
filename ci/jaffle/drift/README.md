@@ -13,6 +13,7 @@ class under the demo organization's auto-merge rule, with no `driftPolicy` in th
 | `scenario.py` | The scenario: `plan`, `check`, `mutations`, `gate` and `run` |
 | `test_scenario.py` | Tests of the checks and of the assertions the live run makes |
 | `REQUIRES` | The api and agent releases the live run needs |
+| `unannotated.odcs.yaml` | The contract the quickstart shipped before E1, for the `tax_rate` negative case |
 
 ## What runs now
 
@@ -35,15 +36,21 @@ python3 ci/jaffle/drift/scenario.py gate   # exit 3 while REQUIRES names no rele
 It creates an organization repository and a project repository on the stack's Forgejo,
 connects the project environment to the project repository, seeds the organization
 repository's `config.git_repo` row with one SQL insert, sets the binding through
-`PUT /v1/orgs/{slug}/binding`, and then runs each case twice: found by a harvest, and found
-by the run check of the next run. The docstring of `scenario.py` lists the environment it
-reads.
+`PUT /v1/orgs/{slug}/binding`, and then runs each mutation twice: found by a harvest, and
+found by the run check of the next run. The project repository holds `jaffle/project/`, whose
+contract is the one an annotated harvest writes (ADR-168 Open Question 22, interim); the
+`tax_rate` case runs once more with `unannotated.odcs.yaml`, whose pull request must not merge
+itself. The person who merges and the platform must be two git host accounts. The docstring
+of `scenario.py` lists the environment it reads and the access each account needs.
 
-It has not run yet: the api and agent releases it needs do not exist. To switch it on:
+It has not run yet. The api release it needs does not exist: A4 and A7 are not built, and
+A11 is not merged. The agent's G3 is in the tag v5.21.0, whose release is a draft. To
+switch it on:
 
-1. Once the api release that holds A1, A3, A4, A7, A8, A11, A12 and A12b exists, and the
-   agent release that holds G3, set `API_VERSION` and `AGENT_VERSION` in `REQUIRES`.
-   `scenario.py gate` then passes, and the `drift` job's last step says so.
+1. Once the api release that holds A1, A3, A4, A7, A8, A11, A12 and A12b exists, set
+   `API_VERSION` in `REQUIRES`, and once the agent release v5.21.0 is published, set
+   `AGENT_VERSION=5.21.0`. `scenario.py gate` then passes, and the `drift` job's last
+   step says so.
 2. Run `scenario.py run` against a stack that runs those releases or later, such as the
    local stack of the stack repository, with a project of the demo organization that holds
    the source `jaffle` and the job `load` of `jaffle/project/amfelt.yaml`.
