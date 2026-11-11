@@ -182,6 +182,21 @@ class Assertions(unittest.TestCase):
             with self.subTest(case=case.name), self.assertRaises(scenario.Fail):
                 scenario.assert_baseline(Fake(), case)
 
+    def test_a_held_baseline_lacks_the_added_table(self):
+        def stored(*tables):
+            text = yaml.safe_dump({"schema": [{"name": t, "properties": [{"name": "id"}]} for t in tables]})
+
+            class Fake:
+                def contract(self):
+                    return {"contract_yaml": text}
+            return Fake()
+        tweets = scenario.CASES[3]
+        scenario.assert_baseline(stored("tweets"), tweets)
+        with self.assertRaises(scenario.Fail):
+            scenario.assert_baseline(stored("tweets", "posts"), tweets)
+        with self.assertRaises(scenario.Fail):
+            scenario.assert_baseline(stored("posts"), tweets)
+
     def test_physical_types(self):
         self.assertEqual(scenario.physical_type({"physicalType": "numeric(8, 4)"}), "numeric(8,4)")
         self.assertEqual(scenario.physical_type({"physicalType": "numeric", "precision": 6, "scale": 4}),
