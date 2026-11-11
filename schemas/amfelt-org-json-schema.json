@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Amfelt organization file",
+  "description": "amfelt-org.yaml: an organization's own configuration file, whose top-level driftPolicy is the organization level of the drift policy (ADR-168, Open Question 17). Its driftPolicy is checked against OrgPolicy in drift-policy-schema.json, the copy of core's drift/policy.schema.json beside this file.",
+  "type": "object",
+  "required": ["driftPolicy"],
+  "properties": {
+    "driftPolicy": { "$ref": "drift-policy-schema.json#/$defs/OrgPolicy" }
+  }
+}

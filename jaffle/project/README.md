@@ -7,7 +7,7 @@ This folder is the ready-made Amfelt project that CI and the stack run: the proj
 Both files were produced by the agent's own commands, run in the project directory, the same commands this repository's CI runs:
 
 1. `init --name jaffle`.
-2. `import jaffle <source URL> --namespace sales,catalog,marketing --abbreviation jaffle`. The three schemas are named because, without `--namespace`, import takes every other schema too: the empty `public` schema, and PostgreSQL's temporary schemas `pg_temp_2` and `pg_toast_temp_2`, left by the load's temporary table (agent#781). The flag stays needed once agent#781 is fixed, because `public` is an ordinary schema. Importing more than one schema needs `--abbreviation`.
+2. `import jaffle <source URL> --annotated --namespace sales,catalog,marketing --abbreviation jaffle`. `--annotated` records each column's type details, such as `tax_rate`'s precision 6 and scale 4, as custom properties, the way a drift harvest records them. The three schemas are named because, without `--namespace`, import takes every other schema too: the empty `public` schema, and PostgreSQL's temporary schemas `pg_temp_2` and `pg_toast_temp_2`, left by the load's temporary table (agent#781). The flag stays needed once agent#781 is fixed, because `public` is an ordinary schema. Importing more than one schema needs `--abbreviation`.
 3. `add-target warehouse duckdb --db-path warehouse/jaffle.duckdb`.
 4. `add-job load --source jaffle --target warehouse --include "*" --layer bridge --schema-prefix jaffle`. The job stops at the bridge layer, because this project has no business layer.
 

@@ -48,6 +48,10 @@ schema:
         physicalType: int4
         required: false
         customProperties:
+          - property: precision
+            value: 32
+          - property: radix
+            value: 2
           - property: source_driver
             value: postgres
           - property: source_physical_type
@@ -117,6 +121,10 @@ schema:
         physicalType: int4
         required: false
         customProperties:
+          - property: precision
+            value: 32
+          - property: radix
+            value: 2
           - property: source_driver
             value: postgres
           - property: source_physical_type
@@ -175,6 +183,12 @@ schema:
         physicalType: timestamp
         required: false
         customProperties:
+          - property: date
+            value: true
+          - property: time
+            value: true
+          - property: timezone
+            value: false
           - property: source_driver
             value: postgres
           - property: source_physical_type
@@ -377,6 +391,12 @@ schema:
         physicalType: timestamp
         required: false
         customProperties:
+          - property: date
+            value: true
+          - property: time
+            value: true
+          - property: timezone
+            value: false
           - property: source_driver
             value: postgres
           - property: source_physical_type
@@ -387,6 +407,10 @@ schema:
         physicalType: int4
         required: false
         customProperties:
+          - property: precision
+            value: 32
+          - property: radix
+            value: 2
           - property: source_driver
             value: postgres
           - property: source_physical_type
@@ -397,6 +421,10 @@ schema:
         physicalType: int4
         required: false
         customProperties:
+          - property: precision
+            value: 32
+          - property: radix
+            value: 2
           - property: source_driver
             value: postgres
           - property: source_physical_type
@@ -407,6 +435,10 @@ schema:
         physicalType: int4
         required: false
         customProperties:
+          - property: precision
+            value: 32
+          - property: radix
+            value: 2
           - property: source_driver
             value: postgres
           - property: source_physical_type
@@ -447,6 +479,12 @@ schema:
         physicalType: timestamp
         required: false
         customProperties:
+          - property: date
+            value: true
+          - property: time
+            value: true
+          - property: timezone
+            value: false
           - property: source_driver
             value: postgres
           - property: source_physical_type
@@ -457,6 +495,10 @@ schema:
         physicalType: numeric(6,4)
         required: false
         customProperties:
+          - property: precision
+            value: 6
+          - property: scale
+            value: 4
           - property: source_driver
             value: postgres
           - property: source_physical_type

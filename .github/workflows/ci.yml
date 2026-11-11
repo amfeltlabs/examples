@@ -426,6 +426,73 @@ jobs:
       - name: Check the project against the expected counts and the image pin
         run: python3 jaffle/check_project.py
 
+  # The Jaffle Shop drift scenario of ADR-168, task E1 (ci/jaffle/drift/README.md), in the
+  # parts that need no stack: the tests of scenario.py, the organization file
+  # jaffle/org/amfelt-org.yaml against its schema, the scenario's inputs, and every mutation
+  # applied to the source of jaffle/compose.yaml in a transaction that is rolled back. The
+  # live scenario needs a stack running an api release that does not exist yet: the last
+  # step prints that ci/jaffle/drift/REQUIRES lacks API_VERSION, and passes. A ref from before the
+  # scenario has no ci/jaffle/drift/ and skips the job's steps, and the log says so.
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Find the scenario
+        id: scenario
+        run: |
+          if [ -f ci/jaffle/drift/scenario.py ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "The ref has no ci/jaffle/drift/scenario.py; it is from before the drift scenario. Skipping."
+          fi
+
+      - uses: actions/setup-python@v7
+        if: steps.scenario.outputs.present == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Install the validator
+        if: steps.scenario.outputs.present == 'true'
+        run: python3 -m pip install --disable-pip-version-check check-jsonschema==0.38.2 pyyaml==6.0.3
+
+      - name: Test scenario.py
+        if: steps.scenario.outputs.present == 'true'
+        run: python3 -m unittest -v test_scenario
+        working-directory: ci/jaffle/drift
+
+      - name: Validate the organization file
+        if: steps.scenario.outputs.present == 'true'
+        run: |
+          check-jsonschema --schemafile schemas/amfelt-org-json-schema.json \
+            jaffle/org/amfelt-org.yaml
+
+      - name: Check the scenario's inputs
+        if: steps.scenario.outputs.present == 'true'
+        run: python3 ci/jaffle/drift/scenario.py check
+
+      - name: Start the source
+        if: steps.scenario.outputs.present == 'true'
+        working-directory: jaffle
+        run: |
+          chmod -R a+rX db data
+          docker compose up -d --wait source
+
+      - name: Apply each mutation to the source, rolled back
+        if: steps.scenario.outputs.present == 'true'
+        working-directory: jaffle
+        run: python3 ../ci/jaffle/drift/scenario.py mutations
+
+      # Exit 3 is the gate's "not yet": the live scenario waits for the releases REQUIRES
+      # names. Any other failure fails the job.
+      - name: Say which releases the live scenario waits for
+        if: steps.scenario.outputs.present == 'true'
+        run: python3 ci/jaffle/drift/scenario.py gate || test $? -eq 3
+
   # Runs the CLI-driven tutorial, the engine's regression proof on this dataset:
   # ci/jaffle/steps/01-06 and 99, unchanged, with the amfelt CLI installed on the runner and
   # on the PATH, the source and the DuckDB shell run through jaffle/compose.yaml. No reader

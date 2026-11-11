@@ -1,0 +1,18 @@
+# The releases the drift scenario needs, as KEY=value lines a shell can source.
+#
+# The scenario's live run (scenario.py run) refuses to start while either value is empty,
+# and against a stack whose api reports an older version than API_VERSION, or with an
+# amfelt CLI older than AGENT_VERSION. scenario.py gate reports which value is missing.
+#
+# API_VERSION is the first api release that holds all of these ADR-168 tasks:
+#   A1 api#1366 (policy version 2 by severity), A3 api#1368 (halt on GATE and REPAIR),
+#   A4 api#1370 (drift pull requests and auto-merge), A7 api#1373 (import on a person's
+#   merge), A11 api#1384 (the run check, pull request api#1431), A8 api#1375, A12 api#1414
+#   and A12b api#1429 (the organization level and its binding).
+# AGENT_VERSION is the first agent release that holds G3 agent#926 (the run check at the
+# start of every run, pull request agent#957, merged): v5.21.0, published on 2026-11-11.
+# G2, the stopped outcome, shipped in agent v5.16.0.
+#
+# Set each to the release's version, without the leading v, once it exists.
+API_VERSION=
+AGENT_VERSION=5.21.0

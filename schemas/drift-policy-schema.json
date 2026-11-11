@@ -1,0 +1,723 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "AutoMerge": {
+      "properties": {
+        "environments": {
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "The environments the rule covers."
+        },
+        "situations": {
+          "items": {
+            "enum": [
+              "table.added.selected",
+              "table.added",
+              "column.added.nullable",
+              "column.type.widened",
+              "column.type.physical-widened",
+              "column.nullability.loosened",
+              "column.enum.value-added",
+              "column.metadata.changed"
+            ]
+          },
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "The situations the rule covers; only the situations the catalog marks eligible."
+        },
+        "requiredChecks": {
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "The checks that must pass on the head the platform opened, beside the contract gate."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "environments",
+        "situations"
+      ],
+      "description": "The auto-merge rule of AUTO pull requests."
+    },
+    "Class": {
+      "enum": [
+        "auto",
+        "notify",
+        "gate",
+        "repair"
+      ],
+      "description": "A response class: auto, notify, gate or repair."
+    },
+    "Major": {
+      "properties": {
+        "default": {
+          "$ref": "#/$defs/Class",
+          "description": "The class of every major change, clamped to the classes its situation allows."
+        },
+        "situations": {
+          "properties": {
+            "source.vanished": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of source.vanished: gate, repair."
+            },
+            "table.dropped.with-dependents": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of table.dropped.with-dependents: gate, repair."
+            },
+            "table.renamed.candidate": {
+              "enum": [
+                "gate"
+              ],
+              "description": "The class of table.renamed.candidate: gate."
+            },
+            "table.dropped": {
+              "enum": [
+                "auto",
+                "gate",
+                "repair"
+              ],
+              "description": "The class of table.dropped: auto, gate, repair."
+            },
+            "table.kind.changed": {
+              "enum": [
+                "notify",
+                "gate"
+              ],
+              "description": "The class of table.kind.changed: notify, gate."
+            },
+            "column.dropped.key": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.dropped.key: gate, repair."
+            },
+            "column.dropped.with-dependents": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.dropped.with-dependents: gate, repair."
+            },
+            "column.renamed.candidate": {
+              "enum": [
+                "gate"
+              ],
+              "description": "The class of column.renamed.candidate: gate."
+            },
+            "column.dropped": {
+              "enum": [
+                "auto",
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.dropped: auto, gate, repair."
+            },
+            "column.added.key": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.added.key: gate, repair."
+            },
+            "column.added.required": {
+              "enum": [
+                "notify",
+                "gate"
+              ],
+              "description": "The class of column.added.required: notify, gate."
+            },
+            "column.added.nullable": {
+              "enum": [
+                "auto",
+                "notify",
+                "gate"
+              ],
+              "description": "The class of column.added.nullable: auto, notify, gate."
+            },
+            "column.type.narrowed.nonconforming": {
+              "enum": [
+                "repair"
+              ],
+              "description": "The class of column.type.narrowed.nonconforming: repair."
+            },
+            "column.key.changed": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.key.changed: gate, repair."
+            },
+            "column.key.retyped": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.key.retyped: gate, repair."
+            },
+            "column.changed.with-dependents": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.changed.with-dependents: gate, repair."
+            },
+            "column.type.narrowed": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.type.narrowed: gate, repair."
+            },
+            "column.type.changed": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.type.changed: gate, repair."
+            },
+            "column.type.unknown": {
+              "enum": [
+                "gate"
+              ],
+              "description": "The class of column.type.unknown: gate."
+            },
+            "column.nullability.tightened": {
+              "enum": [
+                "notify",
+                "gate"
+              ],
+              "description": "The class of column.nullability.tightened: notify, gate."
+            },
+            "column.enum.value-removed": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.enum.value-removed: gate, repair."
+            },
+            "target.table.missing": {
+              "enum": [
+                "repair"
+              ],
+              "description": "The class of target.table.missing: repair."
+            },
+            "target.column.missing": {
+              "enum": [
+                "repair"
+              ],
+              "description": "The class of target.column.missing: repair."
+            },
+            "target.column.narrower": {
+              "enum": [
+                "repair"
+              ],
+              "description": "The class of target.column.narrower: repair."
+            },
+            "unclassified": {
+              "enum": [
+                "gate"
+              ],
+              "description": "The class of unclassified: gate."
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "description": "The class per situation at the major severity."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "The major severity: a default class for every major change, and a class per situation that a major change can have; each situation accepts only the classes the situation catalog allows."
+    },
+    "Match": {
+      "properties": {
+        "environment": {
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Environment names; the environment of the ingest is one of them."
+        },
+        "source": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "A glob over the source name."
+        },
+        "object": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "A glob over the qualified object name. It never matches source.vanished."
+        },
+        "column": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "A glob over the column name. It never matches an object situation."
+        },
+        "classification": {
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "ODCS classification values; the column's classification is one of them. It never matches an object situation."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "minProperties": 1,
+      "description": "The selectors of an override; it applies when all of them match."
+    },
+    "Minor": {
+      "properties": {
+        "default": {
+          "$ref": "#/$defs/Class",
+          "description": "The class of every minor change, clamped to the classes its situation allows."
+        },
+        "situations": {
+          "properties": {
+            "table.added.selected": {
+              "enum": [
+                "auto",
+                "notify",
+                "gate"
+              ],
+              "description": "The class of table.added.selected: auto, notify, gate."
+            },
+            "table.added": {
+              "enum": [
+                "auto",
+                "notify",
+                "gate"
+              ],
+              "description": "The class of table.added: auto, notify, gate."
+            },
+            "column.added.key": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.added.key: gate, repair."
+            },
+            "column.added.required": {
+              "enum": [
+                "notify",
+                "gate"
+              ],
+              "description": "The class of column.added.required: notify, gate."
+            },
+            "column.key.changed": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.key.changed: gate, repair."
+            },
+            "column.key.retyped": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.key.retyped: gate, repair."
+            },
+            "column.changed.with-dependents": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.changed.with-dependents: gate, repair."
+            },
+            "column.type.widened": {
+              "enum": [
+                "auto",
+                "notify",
+                "gate"
+              ],
+              "description": "The class of column.type.widened: auto, notify, gate."
+            },
+            "column.nullability.loosened": {
+              "enum": [
+                "auto",
+                "notify",
+                "gate"
+              ],
+              "description": "The class of column.nullability.loosened: auto, notify, gate."
+            },
+            "column.enum.value-added": {
+              "enum": [
+                "auto",
+                "notify",
+                "gate"
+              ],
+              "description": "The class of column.enum.value-added: auto, notify, gate."
+            },
+            "column.constraint.changed": {
+              "enum": [
+                "notify",
+                "gate"
+              ],
+              "description": "The class of column.constraint.changed: notify, gate."
+            },
+            "unclassified": {
+              "enum": [
+                "gate"
+              ],
+              "description": "The class of unclassified: gate."
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "description": "The class per situation at the minor severity."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "The minor severity: a default class for every minor change, and a class per situation that a minor change can have; each situation accepts only the classes the situation catalog allows."
+    },
+    "OrgPolicy": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "maxProperties": 0
+        },
+        {
+          "$ref": "#/$defs/PolicyV2"
+        }
+      ],
+      "description": "Value of driftPolicy in the organization file: null or empty (no block), or the version 2 form. Version 1 has no organization level."
+    },
+    "Override": {
+      "anyOf": [
+        {
+          "required": [
+            "profile"
+          ]
+        },
+        {
+          "required": [
+            "patch"
+          ]
+        },
+        {
+          "required": [
+            "minor"
+          ]
+        },
+        {
+          "required": [
+            "major"
+          ]
+        }
+      ],
+      "properties": {
+        "match": {
+          "$ref": "#/$defs/Match",
+          "description": "The selectors the change must all match."
+        },
+        "profile": {
+          "$ref": "#/$defs/Profile",
+          "description": "The profile for every change the override's severities do not set."
+        },
+        "patch": {
+          "$ref": "#/$defs/Patch",
+          "description": "The override's patch severity."
+        },
+        "minor": {
+          "$ref": "#/$defs/Minor",
+          "description": "The override's minor severity."
+        },
+        "major": {
+          "$ref": "#/$defs/Major",
+          "description": "The override's major severity."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "match"
+      ],
+      "description": "An override: a match and a profile, one or more severities, or both."
+    },
+    "Patch": {
+      "properties": {
+        "default": {
+          "$ref": "#/$defs/Class",
+          "description": "The class of every patch change, clamped to the classes its situation allows."
+        },
+        "situations": {
+          "properties": {
+            "table.added.selected": {
+              "enum": [
+                "auto",
+                "notify",
+                "gate"
+              ],
+              "description": "The class of table.added.selected: auto, notify, gate."
+            },
+            "table.added": {
+              "enum": [
+                "auto",
+                "notify",
+                "gate"
+              ],
+              "description": "The class of table.added: auto, notify, gate."
+            },
+            "column.added.key": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.added.key: gate, repair."
+            },
+            "column.added.nullable": {
+              "enum": [
+                "auto",
+                "notify",
+                "gate"
+              ],
+              "description": "The class of column.added.nullable: auto, notify, gate."
+            },
+            "column.key.changed": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.key.changed: gate, repair."
+            },
+            "column.key.retyped": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.key.retyped: gate, repair."
+            },
+            "column.changed.with-dependents": {
+              "enum": [
+                "gate",
+                "repair"
+              ],
+              "description": "The class of column.changed.with-dependents: gate, repair."
+            },
+            "column.type.unknown": {
+              "enum": [
+                "gate"
+              ],
+              "description": "The class of column.type.unknown: gate."
+            },
+            "column.type.physical-widened": {
+              "enum": [
+                "auto",
+                "notify",
+                "gate"
+              ],
+              "description": "The class of column.type.physical-widened: auto, notify, gate."
+            },
+            "column.metadata.changed": {
+              "enum": [
+                "auto",
+                "notify",
+                "gate"
+              ],
+              "description": "The class of column.metadata.changed: auto, notify, gate."
+            },
+            "target.column.extra": {
+              "enum": [
+                "notify",
+                "gate"
+              ],
+              "description": "The class of target.column.extra: notify, gate."
+            },
+            "unclassified": {
+              "enum": [
+                "gate"
+              ],
+              "description": "The class of unclassified: gate."
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "description": "The class per situation at the patch severity."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "The patch severity: a default class for every patch change, and a class per situation that a patch change can have; each situation accepts only the classes the situation catalog allows."
+    },
+    "PolicyV1": {
+      "properties": {
+        "onPatch": {
+          "type": "string",
+          "enum": [
+            "stop",
+            "warn_continue",
+            "adapt",
+            ""
+          ],
+          "description": "The action for a patch-level change: stop, warn_continue or adapt. Empty falls through to the built-in floor, warn_continue."
+        },
+        "onMinor": {
+          "type": "string",
+          "enum": [
+            "stop",
+            "warn_continue",
+            "adapt",
+            ""
+          ],
+          "description": "The action for a minor-level change: stop, warn_continue or adapt. Empty falls through to the built-in floor, adapt."
+        },
+        "onMajor": {
+          "type": "string",
+          "enum": [
+            "stop",
+            "warn_continue",
+            "adapt",
+            ""
+          ],
+          "description": "The action for a major-level change: stop, warn_continue or adapt. Empty falls through to the built-in floor, stop."
+        },
+        "overrides": {
+          "items": {
+            "properties": {
+              "match": {
+                "type": "string",
+                "minLength": 1,
+                "description": "A glob over the object name, or over the object and column name joined by a dot."
+              },
+              "onPatch": {
+                "type": "string",
+                "enum": [
+                  "stop",
+                  "warn_continue",
+                  "adapt"
+                ],
+                "description": "The action for a patch-level change of a matching object or column."
+              },
+              "onMinor": {
+                "type": "string",
+                "enum": [
+                  "stop",
+                  "warn_continue",
+                  "adapt"
+                ],
+                "description": "The action for a minor-level change of a matching object or column."
+              },
+              "onMajor": {
+                "type": "string",
+                "enum": [
+                  "stop",
+                  "warn_continue",
+                  "adapt"
+                ],
+                "description": "The action for a major-level change of a matching object or column."
+              }
+            },
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "match"
+            ]
+          },
+          "type": "array",
+          "description": "Pattern overrides, checked before the level actions; the first matching override that sets the level wins."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "The version 1 form: an action per semantic-version level, and pattern overrides."
+    },
+    "PolicyV2": {
+      "properties": {
+        "version": {
+          "const": 2,
+          "description": "The number 2."
+        },
+        "profile": {
+          "$ref": "#/$defs/Profile",
+          "description": "The profile for every change that no step before it sets."
+        },
+        "patch": {
+          "$ref": "#/$defs/Patch",
+          "description": "The patch severity."
+        },
+        "minor": {
+          "$ref": "#/$defs/Minor",
+          "description": "The minor severity."
+        },
+        "major": {
+          "$ref": "#/$defs/Major",
+          "description": "The major severity."
+        },
+        "overrides": {
+          "items": {
+            "$ref": "#/$defs/Override"
+          },
+          "type": "array",
+          "description": "Overrides, checked in order before situations, defaults and profiles."
+        },
+        "autoMerge": {
+          "oneOf": [
+            {
+              "const": false
+            },
+            {
+              "$ref": "#/$defs/AutoMerge"
+            }
+          ],
+          "description": "The auto-merge rule, or false for none at this level."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "version"
+      ],
+      "description": "The version 2 form, keyed by severity: a profile, a default and a class per situation for each severity, overrides and the auto-merge rule."
+    },
+    "Profile": {
+      "enum": [
+        "strict",
+        "balanced",
+        "permissive"
+      ],
+      "description": "A starter profile: strict, balanced (the standard profile) or permissive."
+    }
+  },
+  "oneOf": [
+    {
+      "type": "null"
+    },
+    {
+      "$ref": "#/$defs/PolicyV1"
+    },
+    {
+      "$ref": "#/$defs/PolicyV2"
+    }
+  ],
+  "title": "Amfelt drift policy",
+  "description": "Value of driftPolicy on the project or on a sources[] entry of amfelt.yaml: null (no block), the version 1 form or the version 2 form, keyed by severity."
+}

@@ -41,8 +41,12 @@ YAML
     install_plugins amfelt.yaml
 
     step "Adding the source: importing its three schemas into work/contracts/"
+    # --annotated records each column's type details: a decimal's precision and scale, a
+    # number's radix, a timestamp's date, time and time zone. A drift harvest writes them
+    # too, so the contract and a later harvest agree; without them a widened decimal such as
+    # tax_rate reads as a type change of unknown size (ADR-168 Open Question 22).
     url=$(source_url)
-    (cd work && amfelt import jaffle "$url" \
+    (cd work && amfelt import jaffle "$url" --annotated \
         --namespace sales,catalog,marketing --abbreviation jaffle --level warn)
 
     step "Adding the target: a DuckDB file in work/warehouse/"
