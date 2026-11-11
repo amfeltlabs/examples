@@ -4,7 +4,9 @@ and the assertions the live run makes on what the api answers.
 Run from this directory: python3 -m unittest test_scenario
 """
 
+import contextlib
 import copy
+import io
 import os
 import tempfile
 import unittest
@@ -495,6 +497,36 @@ class LiveRun(unittest.TestCase):
                           env["PGSSLMODE"]), ("ad@min", "s3cr/t", "db.local", "5433", "amfelt_control", "disable"))
         with self.assertRaises(scenario.Fail):
             scenario.pg_environment("mysql://x/y")
+
+class ShippedState(unittest.TestCase):
+    def test_the_gate_waits_for_the_api_alone(self):
+        values, missing = scenario.gate()
+        self.assertEqual(missing, ["API_VERSION"])
+        self.assertEqual(values["AGENT_VERSION"], "5.21.0")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = scenario.main(["scenario.py", "gate"])
+        self.assertEqual(code, scenario.GATE_UNMET)
+        self.assertIn("names no API_VERSION.", out.getvalue())
+        self.assertNotIn("AGENT_VERSION", out.getvalue())
+
+    def test_the_old_file_case_waits(self):
+        written = []
+        event = {"id": "u1", "situations": [{"object": "sales_stores", "column": "tax_rate",
+                                             "situation": "column.type.widened", "class": "auto"}],
+                 "overall_class": "auto", "halts": False, "detected_by": "harvest",
+                 "pull_request": {"number": 4, "state": "open"}}
+        stack = FakeStack(harvests=[[], [event]], pulls={4: {"state": "open", "merged": False}})
+        stack.write_files = lambda repo, files, message, branch="main": written.append(files)
+        scenario.tax_rate_with_the_old_file(stack)
+        with open(scenario.UNANNOTATED_CONTRACT, encoding="utf-8") as f:
+            self.assertIn({"contracts/jaffle.odcs.yaml": f.read()}, written)
+        self.assertEqual(stack.mutations, [["tax-rate"]])
+        stack = FakeStack(harvests=[[], [dict(event, pull_request={"number": 4, "state": "merged_by_platform"})]],
+                          pulls={4: {"state": "closed", "merged": True}})
+        with self.assertRaises(scenario.Fail):
+            scenario.tax_rate_with_the_old_file(stack)
+
 
 if __name__ == "__main__":
     unittest.main()

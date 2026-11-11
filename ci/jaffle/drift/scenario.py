@@ -1193,7 +1193,7 @@ def main(argv):
         elif argv[1] == "gate":
             _, missing = gate()
             if missing:
-                print("The live drift scenario waits for releases that are not published yet: REQUIRES names "
+                print("The live drift scenario waits for a release that is not published yet: REQUIRES names "
                       "no " + " and no ".join(missing) + ". ci/jaffle/drift/README.md says what to set.")
                 return GATE_UNMET
             ok("REQUIRES names the api and agent releases the live run needs")

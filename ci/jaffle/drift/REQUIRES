@@ -10,10 +10,9 @@
 #   merge), A11 api#1384 (the run check, pull request api#1431), A8 api#1375, A12 api#1414
 #   and A12b api#1429 (the organization level and its binding).
 # AGENT_VERSION is the first agent release that holds G3 agent#926 (the run check at the
-# start of every run, pull request agent#957, merged). The tag v5.21.0 holds it; its
-# release is still a draft, so AGENT_VERSION stays empty until it is published. G2, the
-# stopped outcome, shipped in agent v5.16.0.
+# start of every run, pull request agent#957, merged): v5.21.0, published on 2026-11-11.
+# G2, the stopped outcome, shipped in agent v5.16.0.
 #
 # Set each to the release's version, without the leading v, once it exists.
 API_VERSION=
-AGENT_VERSION=
+AGENT_VERSION=5.21.0

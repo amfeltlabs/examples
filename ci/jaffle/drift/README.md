@@ -44,12 +44,11 @@ itself. The person who merges and the platform must be two git host accounts. Th
 of `scenario.py` lists the environment it reads and the access each account needs.
 
 It has not run yet. The api release it needs does not exist: A4 and A7 are not built, and
-A11 is not merged. The agent's G3 is in the tag v5.21.0, whose release is a draft. To
-switch it on:
+A11 is not merged. The agent release it needs, v5.21.0 with G3, is published, and
+`REQUIRES` names it. To switch it on:
 
 1. Once the api release that holds A1, A3, A4, A7, A8, A11, A12 and A12b exists, set
-   `API_VERSION` in `REQUIRES`, and once the agent release v5.21.0 is published, set
-   `AGENT_VERSION=5.21.0`. `scenario.py gate` then passes, and the `drift` job's last
+   `API_VERSION` in `REQUIRES`. `scenario.py gate` then passes, and the `drift` job's last
    step says so.
 2. Run `scenario.py run` against a stack that runs those releases or later, such as the
    local stack of the stack repository, with a project of the demo organization that holds

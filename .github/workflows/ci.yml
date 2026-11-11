@@ -430,9 +430,8 @@ jobs:
   # parts that need no stack: the tests of scenario.py, the organization file
   # jaffle/org/amfelt-org.yaml against its schema, the scenario's inputs, and every mutation
   # applied to the source of jaffle/compose.yaml in a transaction that is rolled back. The
-  # live scenario needs a stack running an api release that does not exist yet and an
-  # agent release that is not published yet: the last step prints which REQUIRES lacks,
-  # from ci/jaffle/drift/REQUIRES, and passes. A ref from before the
+  # live scenario needs a stack running an api release that does not exist yet: the last
+  # step prints that ci/jaffle/drift/REQUIRES lacks API_VERSION, and passes. A ref from before the
   # scenario has no ci/jaffle/drift/ and skips the job's steps, and the log says so.
   drift:
     runs-on: ubuntu-latest
