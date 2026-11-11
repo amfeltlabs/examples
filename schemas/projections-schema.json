@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "title": "Amfelt contract projections block",
+  "description": "Value of the contract-level ODCS custom property named projections (ADR-167).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["fromVersion", "changes"],
+  "properties": {
+    "fromVersion": {
+      "description": "The version of the previous contract this block migrates from. The gate parses and compares it (V3); this schema checks only that it is a non-blank string.",
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "changes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/Entry" }
+    }
+  },
+  "$defs": {
+    "Entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object", "forward", "backward"],
+      "properties": {
+        "object": {
+          "description": "Qualified object name as the gate reports it: <catalog_schema>_<name>, or <name>.",
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "column": {
+          "description": "Column name in the previous contract, or in the proposed contract for a column only it has. Omit only for an object the proposed contract no longer has.",
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "forward": { "$ref": "#/$defs/Projection" },
+        "backward": { "$ref": "#/$defs/Projection" }
+      }
+    },
+    "Projection": {
+      "type": "object",
+      "required": ["strategy"],
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "required": ["strategy", "expression"],
+          "properties": {
+            "strategy": { "const": "expression" },
+            "expression": { "type": "string", "pattern": "\\S" }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "required": ["strategy", "value"],
+          "properties": {
+            "strategy": { "const": "default" },
+            "value": { "type": ["string", "number", "boolean"] }
+          }
+        },
+        {
+          "additionalProperties": false,
+          "required": ["strategy", "reason"],
+          "properties": {
+            "strategy": { "const": "none" },
+            "reason": { "type": "string", "pattern": "\\S" }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,20 @@
+# The demo organization's organization file: its drift policy, the demo rule.
+#
+# The organization binding names this folder in a repository of the organization's own,
+# never in a project's: the drift scenario (ci/jaffle/drift/) copies it to org/ in such a
+# repository and binds the organization to that folder. The block sets no class, so every
+# drift situation keeps its standard class, and it lets the platform merge its own pull
+# request for each situation that is eligible and AUTO in the standard profile, in the four
+# environments the platform seeds. It is demo data only.
+driftPolicy:
+  version: 2
+  autoMerge:
+    environments: [development, test, acceptance, production]
+    situations:
+      - table.added.selected
+      - column.added.nullable
+      - column.type.widened
+      - column.type.physical-widened
+      - column.nullability.loosened
+      - column.enum.value-added
+      - column.metadata.changed
