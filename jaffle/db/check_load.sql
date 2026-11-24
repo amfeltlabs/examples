@@ -12,7 +12,7 @@
 --
 -- What it asserts:
 --   1. the only non-system schemas besides public are sales, catalog and marketing; they
---      hold exactly the seven tables of the model, as ordinary permanent tables and
+--      hold exactly the nine tables of the model, as ordinary permanent tables and
 --      nothing else, with its columns in its order and of its exact types (format_type,
 --      typmods included); NOT NULL is on the primary-key columns and nowhere else; no
 --      column has a default, identity or generation expression; no relation anywhere is
@@ -21,11 +21,12 @@
 --      than whitespace (Unicode whitespace included), read from pg_description
 --      (obj_description, and col_description by attnum);
 --   3. each table's primary key, in column order (catalog.supplies: id, then sku), and
---      exactly the six foreign keys, by name, columns, target and target columns, all
+--      exactly the nine foreign keys, by name, columns, target and target columns, all
 --      validated, not deferrable, MATCH SIMPLE and none cascading; no other constraint,
 --      no index but the primary keys' and no trigger but the foreign keys' own;
 --   4. every table holds as many rows as its CSV file holds records, counted here from the
---      files, independently of load.sql's pinned counts; customer_addresses.csv holds one
+--      files, independently of load.sql's pinned counts, and the two tables without a file,
+--      catalog.supply_deliveries and sales.store_transfers, hold none; customer_addresses.csv holds one
 --      record per customer; every customer has a non-empty street, postal code, city and
 --      country;
 --   5. the columns with a closed form read as European: every customer lives in Utrecht, NL,
@@ -46,7 +47,7 @@ SET search_path = pg_catalog;
 CREATE TEMPORARY TABLE failures (n serial, check_name text, detail text);
 
 -- The model: each table with its primary key and its file, and each column with its exact
--- type as format_type() prints it, in column order.
+-- type as format_type() prints it, in column order. A table with no file holds no rows.
 CREATE TEMPORARY TABLE model (sch text, tbl text, pk text[], csv text);
 INSERT INTO pg_temp.model VALUES
     ('sales', 'customers', '{id}', 'customers.csv'),
@@ -55,7 +56,9 @@ INSERT INTO pg_temp.model VALUES
     ('sales', 'order_items', '{id}', 'order_items.csv'),
     ('catalog', 'products', '{sku}', 'products.csv'),
     ('catalog', 'supplies', '{id,sku}', 'supplies.csv'),
-    ('marketing', 'tweets', '{id}', 'tweets.csv');
+    ('marketing', 'tweets', '{id}', 'tweets.csv'),
+    ('catalog', 'supply_deliveries', '{id}', NULL),
+    ('sales', 'store_transfers', '{id}', NULL);
 
 CREATE TEMPORARY TABLE model_columns (sch text, tbl text, pos int, col text, typ text);
 INSERT INTO pg_temp.model_columns VALUES
@@ -92,7 +95,16 @@ INSERT INTO pg_temp.model_columns VALUES
     ('marketing', 'tweets', 1, 'id', 'uuid'),
     ('marketing', 'tweets', 2, 'customer_id', 'uuid'),
     ('marketing', 'tweets', 3, 'tweeted_at', 'timestamp without time zone'),
-    ('marketing', 'tweets', 4, 'content', 'text');
+    ('marketing', 'tweets', 4, 'content', 'text'),
+    ('catalog', 'supply_deliveries', 1, 'id', 'uuid'),
+    ('catalog', 'supply_deliveries', 2, 'sku', 'text'),
+    ('catalog', 'supply_deliveries', 3, 'supply_id', 'text'),
+    ('catalog', 'supply_deliveries', 4, 'delivered_at', 'timestamp without time zone'),
+    ('catalog', 'supply_deliveries', 5, 'quantity', 'integer'),
+    ('sales', 'store_transfers', 1, 'id', 'uuid'),
+    ('sales', 'store_transfers', 2, 'from_store_id', 'uuid'),
+    ('sales', 'store_transfers', 3, 'to_store_id', 'uuid'),
+    ('sales', 'store_transfers', 4, 'transferred_at', 'timestamp without time zone');
 
 -- User schemas: everything but the system schemas and the temporary ones.
 CREATE TEMPORARY VIEW user_schemas AS
@@ -278,7 +290,7 @@ SELECT 'constraints', format('unexpected trigger %s on %I.%I', t.tgname, r.sch, 
   JOIN pg_temp.model_relations AS r ON r.oid = t.tgrelid
  WHERE NOT t.tgisinternal;
 
--- The six foreign keys, exactly: validated, not deferrable, MATCH SIMPLE ('s'), and no
+-- The nine foreign keys, exactly: validated, not deferrable, MATCH SIMPLE ('s'), and no
 -- action on update or delete ('a').
 CREATE TEMPORARY TABLE expected_fkeys (conname text, tbl text, cols text[], ref_tbl text, ref_cols text[]);
 INSERT INTO pg_temp.expected_fkeys VALUES
@@ -287,7 +299,10 @@ INSERT INTO pg_temp.expected_fkeys VALUES
     ('order_items_order_id_fkey', 'sales.order_items', '{order_id}', 'sales.orders', '{id}'),
     ('order_items_sku_fkey', 'sales.order_items', '{sku}', 'catalog.products', '{sku}'),
     ('supplies_sku_fkey', 'catalog.supplies', '{sku}', 'catalog.products', '{sku}'),
-    ('tweets_customer_id_fkey', 'marketing.tweets', '{customer_id}', 'sales.customers', '{id}');
+    ('tweets_customer_id_fkey', 'marketing.tweets', '{customer_id}', 'sales.customers', '{id}'),
+    ('supply_deliveries_supply_fkey', 'catalog.supply_deliveries', '{supply_id,sku}', 'catalog.supplies', '{id,sku}'),
+    ('store_transfers_from_store_id_fkey', 'sales.store_transfers', '{from_store_id}', 'sales.stores', '{id}'),
+    ('store_transfers_to_store_id_fkey', 'sales.store_transfers', '{to_store_id}', 'sales.stores', '{id}');
 
 INSERT INTO pg_temp.failures (check_name, detail)
 SELECT 'keys',
@@ -349,7 +364,11 @@ DECLARE
     want   bigint;
 BEGIN
     FOR m IN SELECT * FROM pg_temp.model ORDER BY sch, tbl LOOP
-        SELECT n INTO want FROM pg_temp.csv_counts WHERE csv = m.csv;
+        IF m.csv IS NULL THEN
+            want := 0;
+        ELSE
+            SELECT n INTO want FROM pg_temp.csv_counts WHERE csv = m.csv;
+        END IF;
         IF to_regclass(format('%I.%I', m.sch, m.tbl)) IS NULL THEN
             CONTINUE;  -- already reported as a missing table
         END IF;
@@ -357,7 +376,7 @@ BEGIN
         IF actual IS DISTINCT FROM want THEN
             INSERT INTO pg_temp.failures (check_name, detail)
             VALUES ('rows', format('%I.%I holds %s rows, %s holds %s records',
-                                   m.sch, m.tbl, actual, m.csv, want));
+                                   m.sch, m.tbl, actual, coalesce(m.csv, 'no file'), want));
         END IF;
     END LOOP;
 

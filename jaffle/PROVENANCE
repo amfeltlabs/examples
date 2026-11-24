@@ -156,10 +156,11 @@
 # and 5.
 #
 # Step 7 reads data/ and changes none of it. db/load.sql creates the schemas sales,
-# catalog and marketing and their seven tables, with a comment on every schema, table and
+# catalog and marketing and their nine tables, with a comment on every schema, table and
 # column; copies each file into its table (customers.csv into sales.customers,
-# order_items.csv into sales.order_items, and so on), folds customer_addresses.csv into
-# sales.customers' address columns, adds the primary keys and six foreign keys after the
+# order_items.csv into sales.order_items, and so on; catalog.supply_deliveries and
+# sales.store_transfers have no file and stay empty), folds customer_addresses.csv into
+# sales.customers' address columns, adds the primary keys and nine foreign keys after the
 # rows are in, and asserts each table's row count against the published files' counts: the
 # trimmed counts above, which the shift and the renames leave unchanged, and 232
 # addresses, one per customer. It runs in one transaction, so a failure leaves nothing

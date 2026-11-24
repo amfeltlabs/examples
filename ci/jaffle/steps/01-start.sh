@@ -43,7 +43,7 @@ if ! docker compose --progress "$SLOW_PROGRESS" up -d --wait source; then
     fail "the source database did not start; run ci/jaffle/steps/99-reset.sh, then this step again"
 fi
 
-step "The source is up. Its seven tables and their rows:"
+step "The source is up. Its nine tables and their rows:"
 docker compose exec -T source psql -X -v ON_ERROR_STOP=1 -U jaffle -d jaffle <<'SQL'
 SELECT 'sales.customers' AS "table", count(*) AS rows FROM sales.customers
 UNION ALL SELECT 'sales.stores', count(*) FROM sales.stores
@@ -51,5 +51,7 @@ UNION ALL SELECT 'sales.orders', count(*) FROM sales.orders
 UNION ALL SELECT 'sales.order_items', count(*) FROM sales.order_items
 UNION ALL SELECT 'catalog.products', count(*) FROM catalog.products
 UNION ALL SELECT 'catalog.supplies', count(*) FROM catalog.supplies
-UNION ALL SELECT 'marketing.tweets', count(*) FROM marketing.tweets;
+UNION ALL SELECT 'marketing.tweets', count(*) FROM marketing.tweets
+UNION ALL SELECT 'catalog.supply_deliveries', count(*) FROM catalog.supply_deliveries
+UNION ALL SELECT 'sales.store_transfers', count(*) FROM sales.store_transfers;
 SQL
