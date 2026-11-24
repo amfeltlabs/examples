@@ -17,7 +17,7 @@ Neither file holds a login: the source URL, with its user and password, is passe
 
 ## Plugin versions
 
-The `plugins` block declares both plugins with `registry: local`, which means the agent runs each plugin itself, from its workspace `.amfelt/` in the directory it runs in, and not as a remote gRPC server. It is the only registry `amfelt plugin install` provisions, and the agent refuses a plugin without one. The block pins each plugin's version, the PostgreSQL plugin 4.19.0 and the DuckDB plugin 2.21.0, so the tutorial runs the versions the expected counts were made with, and a pinned version that is installed is never looked up online.
+The `plugins` block declares both plugins with `registry: local`, which means the agent runs each plugin itself, from its workspace `.amfelt/` in the directory it runs in, and not as a remote gRPC server. It is the only registry `amfelt plugin install` provisions, and the agent refuses a plugin without one. The block pins each plugin's version, the PostgreSQL plugin 4.19.3 and the DuckDB plugin 2.21.2, so the tutorial runs the versions the expected counts were made with, and a pinned version that is installed is never looked up online.
 
 `IMAGE` names those versions, with the version of the `amfelt` CLI, and the internal quickstart image, by tag and registry digest, that bakes the same versions for the stack's capture. CI checks the versions this file records against `IMAGE`, and the versions the tutorial installs against both.
 
