@@ -57,6 +57,13 @@ class Inputs(unittest.TestCase):
         next(p for p in products["properties"] if p["name"] == "description")["primaryKey"] = True
         self.assertTrue(scenario.check_contract(c))
 
+    def test_description_as_a_business_key_fails(self):
+        c = contract()
+        products = next(o for o in c["schema"] if o["name"] == "products")
+        next(p for p in products["properties"] if p["name"] == "description").setdefault(
+            "customProperties", []).append({"property": "businessKey", "value": True})
+        self.assertTrue(any("businessKey" in m for m in scenario.check_contract(c)))
+
     def test_description_as_a_relationship_target_fails(self):
         c = contract()
         supplies = next(o for o in c["schema"] if o["name"] == "supplies")
