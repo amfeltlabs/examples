@@ -399,7 +399,7 @@ jobs:
 
   # Validates the tutorial's ready-made project file, jaffle/project/amfelt.yaml, against
   # the project-file schema, then checks it is the project the expected counts were made
-  # for: its job's layer, schema prefix and select.objects equal counts.yaml's job block,
+  # for, and checks its contract with ci/jaffle/check_contract.py: its job's layer, schema prefix and select.objects equal counts.yaml's job block,
   # and its PostgreSQL and DuckDB plugin versions equal the pins in jaffle/project/IMAGE. The
   # schema is a copy of core's; schemas/README.md names the commit it was taken from. The
   # validator and PyYAML are pinned to one release each.
@@ -425,6 +425,19 @@ jobs:
 
       - name: Check the project against the expected counts and the image pin
         run: python3 jaffle/check_project.py
+
+      # The ready-made contract is an ODCS v3.2.0 contract, valid against core's released
+      # schema (schemas/README.md), that records db/load.sql's two key examples as
+      # relationships; the tests of check_contract.py come first. A ref from before the check
+      # has no ci/jaffle/check_contract.py and skips it, and the log says so.
+      - name: Check the ready-made contract
+        run: |
+          if [ ! -f ci/jaffle/check_contract.py ]; then
+            echo "The ref has no ci/jaffle/check_contract.py; it is from before ODCS v3.2.0. Skipping."
+            exit 0
+          fi
+          (cd ci/jaffle && python3 -m unittest -v test_check_contract)
+          python3 ci/jaffle/check_contract.py source jaffle/project/contracts/jaffle.odcs.yaml
 
   # The Jaffle Shop drift scenario of ADR-168, task E1 (ci/jaffle/drift/README.md), in the
   # parts that need no stack: the tests of scenario.py, the organization file
@@ -542,6 +555,10 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+
+      # tutorial.sh checks the discovered and the harvested contract with check_contract.py.
+      - name: Install the contract check's validator
+        run: python3 -m pip install --disable-pip-version-check check-jsonschema==0.38.2 pyyaml==6.0.3
 
       - name: Mint a read token for the agent and plugin releases
         id: release-token

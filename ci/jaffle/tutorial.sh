@@ -13,6 +13,15 @@
 #   - after step 2, that the agent's workspace work/.amfelt holds exactly one
 #     source-postgres and one target-duckdb version, SOURCE_POSTGRES_VERSION and
 #     TARGET_DUCKDB_VERSION, the ones the steps' project files declare and install;
+#   - after step 2, that the contract it discovered is a valid ODCS v3.2.0 contract that
+#     records db/load.sql's two key examples: catalog.supply_deliveries' two-column key
+#     as one relationship with two-item lists in the constraint's order, and
+#     sales.store_transfers' two keys into sales.stores as two relationships
+#     (check_contract.py source). A ref whose project/contracts/jaffle.odcs.yaml is not
+#     v3.2.0 is from before ODCS v3.2.0 and skips it, and says so;
+#   - after run 2, that a contract of the warehouse, harvested by one more sync of the
+#     unchanged source with --target-contract, is a valid ODCS v3.2.0 contract
+#     (check_contract.py target), and that the sync changed no count. The same refs skip it;
 #   - before step 1, that the internal image project/IMAGE pins, which the stack's
 #     capture runs, is what project/IMAGE says it is: its `amfelt version` is
 #     AGENT_VERSION, and it bakes exactly one source-postgres and one target-duckdb
@@ -61,6 +70,9 @@
 # TUTORIAL_COUNTS names the counts file the assertions read, by default
 # JAFFLE_DIR/expected/counts.yaml. A copy with one count changed must turn the run red;
 # the steps keep reading their own expected/counts.yaml.
+#
+# check_contract.py needs PyYAML and jsonschema: pip install check-jsonschema==0.38.2
+# pyyaml==6.0.3, as the CI job does.
 #
 # The steps install the plugins with gh from private GitHub releases until the release
 # channel exists (steps/install-from-github.sh), so gh must be signed in, or GH_TOKEN set,
@@ -301,6 +313,17 @@ perturb() {
         die "negative control $1: the change to $(basename "$3") changed nothing"
     fi
     printf '%s\n' "$out"
+}
+
+# odcs_v320: the ref's ready-made contract is an ODCS v3.2.0 contract, so its steps discover
+# and harvest v3.2.0 contracts.
+odcs_v320() {
+    grep -qx 'apiVersion: v3.2.0' "$jaffle/project/contracts/jaffle.odcs.yaml"
+}
+
+# contract_check KIND FILE: check_contract.py KIND FILE.
+contract_check() {
+    python3 "$here/check_contract.py" "$1" "$2"
 }
 
 # image_value FILE KEY: the value of the one KEY= line in the IMAGE file FILE.
@@ -689,6 +712,23 @@ install_control postgres "the PostgreSQL plugin version changed" \
 install_control duckdb "the DuckDB plugin version changed" \
     's/^TARGET_DUCKDB_VERSION=.*/TARGET_DUCKDB_VERSION=0.0.0/' "project/IMAGE's TARGET_DUCKDB_VERSION is v0.0.0"
 
+say "checking the contract step 2 discovered"
+discovered=$jaffle/work/discover/contracts/jaffle.odcs.yaml
+if odcs_v320; then
+    contract_check source "$discovered" || die "the contract step 2 discovered is not what ODCS v3.2.0 and db/load.sql call for"
+    say "negative controls: the discovered contract"
+    must_fail "the source check with the composite key's columns swapped" \
+        "catalog.supply_deliveries: the relationship is" \
+        contract_check source "$(perturb source-swapped \
+            's#properties/supply_id$#properties/SWAP#; s#\(- schema/catalog:supply_deliveries/properties/\)sku$#\1supply_id#; s#properties/SWAP$#properties/sku#' \
+            "$discovered")"
+    must_fail "the source check with a root provenance key" "provenance is a root key" \
+        contract_check source "$(perturb source-provenance '$a\
+provenance: {sourceDriver: postgres}' "$discovered")"
+else
+    say "SKIPPED: the ref's project/contracts/jaffle.odcs.yaml is not ODCS v3.2.0, so its steps discover an older contract"
+fi
+
 run_step 03-configure.sh
 
 # --- Step 3 with the source on another port ----------------------------------------------------
@@ -788,6 +828,29 @@ check_reveal
 
 say "negative controls: the count and reveal assertions on run 2's saved rows"
 run2_controls
+
+# --- The harvested contract of the warehouse ----------------------------------------------------
+
+if odcs_v320; then
+    say "harvesting the warehouse's contract: run 2's sync once more, with --target-contract"
+    HARVESTED=$tmp/warehouse.odcs.yaml
+    export HARVESTED
+    harvested=$HARVESTED
+    # shellcheck disable=SC2016 # expanded by with_lib's shell
+    with_lib \
+        'url=$(source_url); (cd work && amfelt sync --job load --source-url "$url" --target-contract "$HARVESTED" --level warn)' \
+        || die "the sync with --target-contract failed"
+    snapshot >"$tmp/harvest.counts"
+    diff -u "$tmp/run2.counts" "$tmp/harvest.counts" \
+        || die "the sync that harvested the warehouse's contract changed the counts"
+    echo "ok: the sync that harvested the warehouse's contract left all 28 counts unchanged"
+    contract_check target "$harvested" || die "the harvested contract of the warehouse is not a valid ODCS v3.2.0 contract"
+    say "negative control: the harvested contract"
+    must_fail "the target check with apiVersion v3.0.0" "apiVersion is 'v3.0.0'" \
+        contract_check target "$(perturb target-version 's/^apiVersion: v3\.2\.0$/apiVersion: v3.0.0/' "$harvested")"
+else
+    say "SKIPPED: the harvested contract; the ref's project/contracts/jaffle.odcs.yaml is not ODCS v3.2.0"
+fi
 
 # --- Review Focus 3: the documented reset returns to step 1 ------------------------------------
 
