@@ -57,14 +57,31 @@ class Inputs(unittest.TestCase):
         next(p for p in products["properties"] if p["name"] == "description")["primaryKey"] = True
         self.assertTrue(scenario.check_contract(c))
 
-    def test_description_as_a_foreign_end_fails(self):
+    def test_description_as_a_relationship_target_fails(self):
         c = contract()
         supplies = next(o for o in c["schema"] if o["name"] == "supplies")
-        supplies["properties"][0].setdefault("customProperties", []).extend([
-            {"property": "foreign_object", "value": "products"},
-            {"property": "foreign_property", "value": "description"},
-        ])
-        self.assertTrue(any("references" in m for m in scenario.check_contract(c)))
+        products = next(o for o in c["schema"] if o["name"] == "products")
+        supplies["relationships"][0]["to"] = "schema/%s/properties/description" % products["id"]
+        self.assertTrue(any("supplies references products.description" in m for m in scenario.check_contract(c)))
+
+    def test_description_in_a_composite_end_fails(self):
+        c = contract()
+        products = next(o for o in c["schema"] if o["name"] == "products")
+        products["relationships"] = [{
+            "id": "products_description_fkey", "type": "foreignKey",
+            "from": ["schema/%s/properties/sku" % products["id"], "schema/%s/properties/description" % products["id"]],
+            "to": ["schema/%s/properties/sku" % products["id"], "schema/%s/properties/name" % products["id"]],
+        }]
+        self.assertTrue(any("products references" in m and "products.description" in m
+                            for m in scenario.check_contract(c)))
+
+    def test_the_shipped_contract_has_relationships(self):
+        """The check reads relationships: the shipped contract records nine, and none ends at
+        products.description."""
+        ends = list(scenario.relationship_ends(contract()))
+        self.assertEqual(len(ends), 9)
+        self.assertIn(("supply_deliveries", [("supply_deliveries", "supply_id"), ("supply_deliveries", "sku")],
+                       [("supplies", "id"), ("supplies", "sku")]), ends)
 
     def test_a_shipped_contract_passes(self):
         self.assertEqual(scenario.check_contract(contract()), [])

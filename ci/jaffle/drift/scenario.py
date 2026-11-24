@@ -21,9 +21,9 @@ the organization's binding names through PUT /v1/orgs/{slug}/binding, and a proj
 repository whose root holds jaffle/project/: amfelt.yaml, with no driftPolicy, and
 contracts/jaffle.odcs.yaml, the contract an annotated harvest of the source writes, which
 carries precision and scale on tax_rate, so the file and the harvest agree (ADR-168 Open
-Question 22, interim). The tax_rate case runs once more with the contract the quickstart
-shipped before, unannotated.odcs.yaml beside this script: its tax_rate pull request must
-not merge itself. The live run changes no tracked file of this repository.
+Question 22, interim). The tax_rate case runs once more with the contract in the
+unannotated form the quickstart shipped before, as an import without --annotated writes it,
+unannotated.odcs.yaml beside this script: its tax_rate pull request must not merge itself. The live run changes no tracked file of this repository.
 
 The organization repository's config.git_repo row is seeded with one SQL INSERT in the
 stack's control database, because no route registers a customer-connected repository
@@ -365,8 +365,27 @@ def check_project(project):
     return problems
 
 
+def relationship_ends(contract):
+    """Each relationship of the contract as (object, from, to): the object that holds it, and
+    each side as a list of (table, column), in the relationship's order. An end is the
+    reference schema/<object id>/properties/<property id>; the two ids are looked up in the
+    contract, and an end that names no object or property there is (None, None)."""
+    objects = {o.get("id"): o for o in contract.get("schema") or [] if isinstance(o, dict)}
+
+    def column(ref):
+        head, sep, prop_id = str(ref).removeprefix("schema/").rpartition("/properties/")
+        obj = objects.get(head) if sep else None
+        prop = next((p for p in (obj or {}).get("properties") or [] if p.get("id") == prop_id), None)
+        return (obj.get("name"), prop.get("name")) if prop else (None, None)
+
+    for obj in objects.values():
+        for rel in obj.get("relationships") or []:
+            sides = [rel.get(side) if isinstance(rel.get(side), list) else [rel.get(side)] for side in ("from", "to")]
+            yield obj.get("name"), [column(r) for r in sides[0]], [column(r) for r in sides[1]]
+
+
 def check_contract(contract):
-    """The dropped column is in the contract, and it is no key and no foreign key's end."""
+    """The dropped column is in the contract, and it is no key and no end of a relationship."""
     problems = []
     products = [o for o in contract.get("schema") or [] if o.get("name") == "products"]
     columns = [p for o in products for p in o.get("properties") or [] if p.get("name") == "description"]
@@ -376,13 +395,12 @@ def check_contract(contract):
     if column.get("primaryKey") or column.get("primaryKeyPosition"):
         problems.append("products.description is a primary key in the shipped contract")
     for prop in column.get("customProperties") or []:
-        if prop.get("property") in ("businessKey", "foreign_object", "foreign_property"):
+        if prop.get("property") == "businessKey":
             problems.append(f"products.description carries {prop.get('property')} in the shipped contract")
-    for obj in contract.get("schema") or []:
-        for prop in obj.get("properties") or []:
-            custom = {c.get("property"): c.get("value") for c in prop.get("customProperties") or []}
-            if custom.get("foreign_object") == "products" and custom.get("foreign_property") == "description":
-                problems.append(f"{obj.get('name')}.{prop.get('name')} references products.description")
+    for name, froms, tos in relationship_ends(contract):
+        if ("products", "description") in froms + tos:
+            problems.append(f"{name} references products.description in a relationship from "
+                            f"{froms} to {tos}")
     return problems
 
 
@@ -475,7 +493,7 @@ def check():
     if problems:
         raise Fail("; ".join(problems))
     ok("the project file has no driftPolicy; the job load names tweets and not description")
-    ok("products.description is no key and no foreign key's end in the shipped contract")
+    ok("products.description is no key and no relationship's end in the shipped contract")
     ok("the shipped contract records tax_rate as precision 6, scale 4; unannotated.odcs.yaml does not")
     ok("jaffle/org/amfelt-org.yaml is the demo rule")
     ok("the projections block is valid against schemas/projections-schema.json")

@@ -29,11 +29,11 @@ else
 plugins:
   source:
     - plugin: postgres
-      version: 4.10.3
+      version: 4.19.0
       registry: local
   target:
     - plugin: duckdb
-      version: 2.13.4
+      version: 2.21.0
       registry: local
 YAML
 
@@ -53,9 +53,12 @@ YAML
     (cd work && amfelt add-target warehouse duckdb \
         --db-path warehouse/jaffle.duckdb --level warn)
 
-    step "Adding the job: every table, through staging and history to the bridge layer"
+    step "Adding the job: every table with rows, through staging and history to the bridge layer"
+    # supply_deliveries and store_transfers hold no rows: they are in the source for their
+    # keys, which the contract records, and the job leaves them out.
     (cd work && amfelt add-job load --source jaffle --target warehouse \
-        --include "*" --layer bridge --schema-prefix jaffle --level warn)
+        --include "*" --exclude "supply_deliveries,store_transfers" \
+        --layer bridge --schema-prefix jaffle --level warn)
 
     step "Choosing each table's type and history: SCD2 for the four master and reference tables, append for the three transaction tables"
     # SCD2 history closes a row's version when the row changes or is deleted, and opens a
@@ -64,7 +67,7 @@ YAML
     # of the job, and advise --apply writes per-table settings that an AI model
     # recommends, which needs an API key and may differ from one call to the next. The
     # counts this tutorial publishes need these exact settings per table, so they are
-    # written into the job's select block, after the include list. orders and tweets also
+    # written into the job's select block, after the exclude list. orders and tweets also
     # name the column that holds their event time.
     OBJECTS=$(cat <<'YAML'
       objects:
@@ -94,7 +97,7 @@ YAML
 YAML
 )
     export OBJECTS
-    awk '{ print } /^        - "\*"$/ { print ENVIRON["OBJECTS"] }' work/amfelt.yaml >work/amfelt.yaml.new
+    awk '{ print } /^        - store_transfers$/ { print ENVIRON["OBJECTS"] }' work/amfelt.yaml >work/amfelt.yaml.new
     mv work/amfelt.yaml.new work/amfelt.yaml
 fi
 
@@ -102,7 +105,8 @@ step "Checking the project against the job expected/counts.yaml was made for"
 python3 check_project.py work/amfelt.yaml expected/counts.yaml project/IMAGE
 
 step "Checking that work/ holds the same project as project/"
-# Each new project and contract gets its own id and timestamps; everything else must match.
+# Each new project and contract gets its own id and timestamps, and its provenance its own
+# introspectedAt; everything else must match.
 # The contract also records the host and port import reached the source on. Here that is
 # 127.0.0.1 and the port .env's SOURCE_PORT publishes; the ready-made contract records
 # source and 5432, the database's name and port on the container network, where the
@@ -110,7 +114,7 @@ step "Checking that work/ holds the same project as project/"
 port=$(docker compose port source 5432) || fail "the source database publishes no port; run ci/jaffle/steps/01-start.sh first"
 port=${port##*:}
 same() {
-    grep -v -E '^(id|createdAt|contractCreatedTs):|^  introspectedAt:' "$1" \
+    grep -v -E '^(id|createdAt|contractCreatedTs):|^      introspectedAt:' "$1" \
         | sed -e 's/^    host: 127\.0\.0\.1$/    host: source/' \
               -e "s/^    port: $port\$/    port: 5432/"
 }
