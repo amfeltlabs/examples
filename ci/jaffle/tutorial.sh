@@ -722,6 +722,7 @@ if odcs_v320; then
         contract_check source "$(perturb source-swapped \
             's#properties/supply_id$#properties/SWAP#; s#\(- schema/catalog:supply_deliveries/properties/\)sku$#\1supply_id#; s#properties/SWAP$#properties/sku#' \
             "$discovered")"
+    # shellcheck disable=SC2016 # $a is sed's last-line address, not a shell expansion
     must_fail "the source check with a root provenance key" "provenance is a root key" \
         contract_check source "$(perturb source-provenance '$a\
 provenance: {sourceDriver: postgres}' "$discovered")"

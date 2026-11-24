@@ -4,9 +4,14 @@ Each negative case changes one thing in a contract that passes, and must fail fo
 reason. Needs PyYAML and jsonschema, as check_contract.py does.
 """
 
+import contextlib
 import copy
+import io
 import os
+import tempfile
 import unittest
+
+import yaml
 
 import check_contract
 
@@ -119,6 +124,12 @@ class TestCommon(Base):
         find(contract, "store_transfers")["relationships"][0]["to"] = ref("sales", "shops", "id")
         self.fails(contract, "does not resolve", kind="target")
 
+    def test_unresolved_reference_form(self):
+        """An end is schema/<object id>/properties/<property id>, nothing else."""
+        contract = good()
+        find(contract, "store_transfers")["relationships"][0]["to"] = "tables/sales:stores/properties/id"
+        self.fails(contract, "does not resolve", kind="target")
+
     def test_uneven_ends(self):
         contract = good()
         find(contract, "supply_deliveries")["relationships"][0]["to"].pop()
@@ -226,6 +237,37 @@ class TestSource(Base):
         contract = good()
         del find(contract, "supply_deliveries")["relationships"]
         self.assertEqual(check_contract.check("target", copy.deepcopy(contract)), [])
+
+
+class TestMain(unittest.TestCase):
+    def run_main(self, argv):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = check_contract.main(argv)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_usage(self):
+        for argv in ([], ["source"], ["both", SHIPPED], ["source", SHIPPED, "x"]):
+            self.assertEqual(self.run_main(argv)[0], 2, argv)
+
+    def test_passes(self):
+        code, out, _ = self.run_main(["source", SHIPPED])
+        self.assertEqual(code, 0)
+        self.assertIn("is a valid ODCS v3.2.0 source contract", out)
+
+    def test_fails_with_one_line_per_problem(self):
+        contract = good()
+        contract["apiVersion"] = "v3.0.0"
+        del find(contract, "supply_deliveries")["relationships"]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "c.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(contract, f)
+            code, out, err = self.run_main(["source", path])
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertIn("\n  apiVersion is 'v3.0.0'", err)
+        self.assertIn("\n  catalog.supply_deliveries holds 0 relationships, not one", err)
 
 
 if __name__ == "__main__":
