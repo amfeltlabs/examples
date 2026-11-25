@@ -135,6 +135,24 @@ class TestCommon(Base):
         find(contract, "supply_deliveries")["relationships"][0]["to"].pop()
         self.fails(contract, "has 2 from and 1 to ends", kind="target")
 
+    def test_validates_with_the_schemas_own_draft(self):
+        """The schema states draft 2019-09, whose unevaluatedProperties draft 7 ignores: an
+        unknown root key must fail as unevaluated, which only a 2019-09 validator reports."""
+        import jsonschema
+        with open(check_contract.SCHEMA, encoding="utf-8") as f:
+            schema = __import__("json").load(f)
+        self.assertEqual(schema["$schema"], "https://json-schema.org/draft/2019-09/schema")
+        self.assertIs(check_contract.validator_class(schema), jsonschema.Draft201909Validator)
+        contract = good()
+        contract["provenance"] = {"sourceDriver": "postgres"}
+        self.assertIn("schema: (root): Unevaluated properties are not allowed ('provenance' was unexpected)",
+                      check_contract.schema_errors(contract))
+
+    def test_an_unknown_draft_is_refused(self):
+        for schema in ({}, {"$schema": "https://example.com/draft/1"}):
+            with self.assertRaises(ValueError):
+                check_contract.validator_class(schema)
+
     def test_schema(self):
         contract = good()
         contract["status"] = 7
@@ -146,6 +164,11 @@ class TestSource(Base):
         contract = good()
         contract["customProperties"] = []
         self.fails(contract, "records no provenance custom property")
+
+    def test_provenance_not_a_mapping(self):
+        contract = good()
+        contract["customProperties"] = [{"property": "provenance", "value": "postgres"}]
+        self.fails(contract, "the provenance custom property is 'postgres', not a mapping")
 
     def test_composite_reversed(self):
         contract = good()

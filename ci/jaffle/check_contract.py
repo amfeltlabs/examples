@@ -18,7 +18,8 @@ A source contract must, in addition, record the keys db/load.sql declares:
     constraint, which is not the order of the table's columns;
   - sales.store_transfers holds exactly two relationships, of type foreignKey, one from
     from_store_id and one from to_store_id, each to sales.stores id;
-  - the contract records its provenance as a contract-level custom property.
+  - the contract records its provenance as a contract-level custom property whose value
+    is a mapping.
 
 A relationship end is a reference `schema/<object id>/properties/<property id>`. It is
 resolved by looking the two ids up in the contract, never by reading a name out of an id.
@@ -52,12 +53,22 @@ SEPARATE = {
 }
 
 
-def schema_errors(contract, schema_path=SCHEMA):
+def validator_class(schema):
+    """The validator of the draft the schema's $schema names: 2019-09 for core's schema,
+    whose unevaluatedProperties a draft 7 validator would ignore. A schema that names no
+    draft this jsonschema knows is refused."""
     import jsonschema
 
+    found = jsonschema.validators.validator_for(schema, default=None)
+    if found is None:
+        raise ValueError("the schema's $schema %r names no draft jsonschema knows" % (schema.get("$schema"),))
+    return found
+
+
+def schema_errors(contract, schema_path=SCHEMA):
     with open(schema_path, encoding="utf-8") as f:
         schema = json.load(f)
-    validator = jsonschema.Draft201909Validator(schema)
+    validator = validator_class(schema)(schema)
     errors = sorted(validator.iter_errors(contract), key=lambda e: list(e.absolute_path))
     return ["schema: %s: %s" % ("/".join(str(p) for p in e.absolute_path) or "(root)", e.message)
             for e in errors]
@@ -153,8 +164,11 @@ def check_source(contract):
     problems = []
     index = Index(contract)
 
-    if not isinstance(custom(contract).get("provenance"), dict):
+    provenance = custom(contract).get("provenance")
+    if provenance is None:
         problems.append("the contract records no provenance custom property")
+    elif not isinstance(provenance, dict):
+        problems.append("the provenance custom property is %r, not a mapping" % (provenance,))
 
     obj = find_object(contract, *COMPOSITE["table"])
     if obj is None:
