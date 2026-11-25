@@ -301,7 +301,7 @@ jobs:
           python-version: "3.12"
 
       # The structure of the expected results: the job block, every run, every layer, all
-      # seven tables, an integer each, and the reveal. counts.py is standard library only.
+      # nine tables, an integer each, and the reveal. counts.py is standard library only.
       - name: Validate the expected counts
         run: python3 jaffle/expected/counts.py validate
 
@@ -398,9 +398,11 @@ jobs:
         run: sh .compose-ci/ci/jaffle/fresh-clone.sh "$GITHUB_WORKSPACE"
 
   # Validates the tutorial's ready-made project file, jaffle/project/amfelt.yaml, against
-  # the project-file schema, then checks it is the project the expected counts were made
-  # for, and checks its contract with ci/jaffle/check_contract.py: its job's layer, schema prefix and select.objects equal counts.yaml's job block,
-  # and its PostgreSQL and DuckDB plugin versions equal the pins in jaffle/project/IMAGE. The
+  # the project-file schema, then checks with jaffle/check_project.py that it is the project
+  # the expected counts were made for: its job's layer, schema prefix and select.objects
+  # equal counts.yaml's job block, and its PostgreSQL and DuckDB plugin versions equal the
+  # pins in jaffle/project/IMAGE. Last, ci/jaffle/check_contract.py checks the ready-made
+  # contract and the drift scenario's unannotated one (the step below says what). The
   # schema is a copy of core's; schemas/README.md names the commit it was taken from. The
   # validator and PyYAML are pinned to one release each.
   project:
@@ -518,7 +520,9 @@ jobs:
   # and that steps/99-reset.sh returns step 1 to the freshly loaded source.
   #
   # Two checkouts. From the commit that triggered the workflow, in .tutorial-ci/, come only
-  # ci/jaffle/tutorial.sh, compose-alone.sh and steps-dir.sh. Everything else comes from
+  # ci/jaffle/tutorial.sh, compose-alone.sh, steps-dir.sh and check_contract.py, and the
+  # schema check_contract.py reads, schemas/odcs-json-schema-v3.2.0-20261029.json.
+  # Everything else comes from
   # inputs.ref: the steps, lib.sh and install-from-github.sh, wherever that ref keeps them
   # (ci/jaffle/steps, or jaffle/steps on the released tags: steps-dir.sh finds them),
   # compose.yaml, .env.example, project/
