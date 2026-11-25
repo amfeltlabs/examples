@@ -1,6 +1,6 @@
 -- Load the published Jaffle Shop corpus (jaffle/data/) into a clean relational model:
--- three business schemas, seven tables, a comment on every schema, table and column, and
--- six validated foreign keys. Run it once, against an empty database, in ONE transaction:
+-- three business schemas, nine tables, a comment on every schema, table and column, and
+-- nine validated foreign keys. Run it once, against an empty database, in ONE transaction:
 --
 --   psql -X -v ON_ERROR_STOP=1 --single-transaction -v datadir=/path/to/jaffle/data \
 --        -f jaffle/db/load.sql
@@ -50,7 +50,11 @@
 --
 -- KEYS
 --
--- The model is relational: every documented reference is a validated foreign key. Keys
+-- The model is relational: every documented reference is a validated foreign key. Two
+-- tables hold no rows and exist for their keys: catalog.supply_deliveries references a
+-- supply by the two columns of its key, in one foreign key, and sales.store_transfers
+-- references sales.stores twice, in two. A discovered contract records the first as one
+-- relationship with two columns on each side, and the second as two relationships. Keys
 -- are added after the rows are copied, so the database checks every loaded row against
 -- them. No foreign key cascades: a later delete must remove children before parents, so
 -- no source fact changes implicitly.
@@ -201,6 +205,35 @@ COMMENT ON COLUMN marketing.tweets.customer_id IS 'Customer who posted the tweet
 COMMENT ON COLUMN marketing.tweets.tweeted_at IS 'Tweet posting timestamp, stored without a time zone.';
 COMMENT ON COLUMN marketing.tweets.content IS 'Text of the tweet recorded by the source.';
 
+-- A delivery names its supply by both columns of the supply's key. The foreign key lists
+-- them in the key's order, supply_id then sku, which is not the order of the columns here.
+CREATE TABLE catalog.supply_deliveries (
+    id           uuid NOT NULL,
+    sku          text,
+    supply_id    text,
+    delivered_at timestamp without time zone,
+    quantity     integer
+);
+COMMENT ON TABLE catalog.supply_deliveries IS 'One row per delivery of a supply for one SKU; the corpus holds none';
+COMMENT ON COLUMN catalog.supply_deliveries.id IS 'Unique identifier for the delivery.';
+COMMENT ON COLUMN catalog.supply_deliveries.sku IS 'Product SKU the delivered supply is for; with supply_id, references catalog.supplies (id, sku).';
+COMMENT ON COLUMN catalog.supply_deliveries.supply_id IS 'Supply delivered; with sku, references catalog.supplies (id, sku).';
+COMMENT ON COLUMN catalog.supply_deliveries.delivered_at IS 'Delivery timestamp, stored without a time zone.';
+COMMENT ON COLUMN catalog.supply_deliveries.quantity IS 'Number of units delivered.';
+
+-- A transfer moves stock from one store to another, so it references sales.stores twice.
+CREATE TABLE sales.store_transfers (
+    id             uuid NOT NULL,
+    from_store_id  uuid,
+    to_store_id    uuid,
+    transferred_at timestamp without time zone
+);
+COMMENT ON TABLE sales.store_transfers IS 'One row per transfer of stock between two stores; the corpus holds none';
+COMMENT ON COLUMN sales.store_transfers.id IS 'Unique identifier for the transfer.';
+COMMENT ON COLUMN sales.store_transfers.from_store_id IS 'Store the stock leaves; references sales.stores.id.';
+COMMENT ON COLUMN sales.store_transfers.to_store_id IS 'Store the stock arrives at; references sales.stores.id.';
+COMMENT ON COLUMN sales.store_transfers.transferred_at IS 'Transfer timestamp, stored without a time zone.';
+
 -- Rows. HEADER MATCH fails the load when a file's header names differ from the column list,
 -- so a column cannot land in the wrong place silently. Each column list is in the file's
 -- order.
@@ -221,6 +254,8 @@ ALTER TABLE sales.order_items ADD CONSTRAINT order_items_pkey PRIMARY KEY (id);
 ALTER TABLE catalog.products ADD CONSTRAINT products_pkey PRIMARY KEY (sku);
 ALTER TABLE catalog.supplies ADD CONSTRAINT supplies_pkey PRIMARY KEY (id, sku);
 ALTER TABLE marketing.tweets ADD CONSTRAINT tweets_pkey PRIMARY KEY (id);
+ALTER TABLE catalog.supply_deliveries ADD CONSTRAINT supply_deliveries_pkey PRIMARY KEY (id);
+ALTER TABLE sales.store_transfers ADD CONSTRAINT store_transfers_pkey PRIMARY KEY (id);
 
 -- Addresses. customer_addresses.csv holds one address per customer; it is folded into
 -- sales.customers and leaves no table behind. Its primary key rejects a second address for
@@ -274,7 +309,7 @@ $$;
 
 DROP TABLE pg_temp.customer_addresses;
 
--- The six references of the model, checked against every loaded row.
+-- The nine references of the model, checked against every loaded row.
 ALTER TABLE sales.orders ADD CONSTRAINT orders_customer_id_fkey
     FOREIGN KEY (customer_id) REFERENCES sales.customers (id);
 ALTER TABLE sales.orders ADD CONSTRAINT orders_store_id_fkey
@@ -287,9 +322,16 @@ ALTER TABLE catalog.supplies ADD CONSTRAINT supplies_sku_fkey
     FOREIGN KEY (sku) REFERENCES catalog.products (sku);
 ALTER TABLE marketing.tweets ADD CONSTRAINT tweets_customer_id_fkey
     FOREIGN KEY (customer_id) REFERENCES sales.customers (id);
+ALTER TABLE catalog.supply_deliveries ADD CONSTRAINT supply_deliveries_supply_fkey
+    FOREIGN KEY (supply_id, sku) REFERENCES catalog.supplies (id, sku);
+ALTER TABLE sales.store_transfers ADD CONSTRAINT store_transfers_from_store_id_fkey
+    FOREIGN KEY (from_store_id) REFERENCES sales.stores (id);
+ALTER TABLE sales.store_transfers ADD CONSTRAINT store_transfers_to_store_id_fkey
+    FOREIGN KEY (to_store_id) REFERENCES sales.stores (id);
 
 -- The digests pin the bytes; this pins what the loader made of them. The counts are the
--- data records of each published file (header excluded), counted with Python's csv module.
+-- data records of each published file (header excluded), counted with Python's csv module;
+-- the two tables without a file hold none.
 -- customer_addresses.csv's 232 records are counted with the address checks above.
 DO $$
 DECLARE
@@ -304,7 +346,9 @@ BEGIN
             ('sales', 'order_items', 10025),
             ('catalog', 'products', 10),
             ('catalog', 'supplies', 65),
-            ('marketing', 'tweets', 2161)
+            ('marketing', 'tweets', 2161),
+            ('catalog', 'supply_deliveries', 0),
+            ('sales', 'store_transfers', 0)
         ) AS pin (sch, tbl, n)
     LOOP
         EXECUTE format('SELECT count(*) FROM ONLY %I.%I', expected.sch, expected.tbl)
@@ -318,6 +362,7 @@ END
 $$;
 
 ANALYZE sales.customers, sales.stores, sales.orders, sales.order_items,
-        catalog.products, catalog.supplies, marketing.tweets;
+        catalog.products, catalog.supplies, marketing.tweets,
+        catalog.supply_deliveries, sales.store_transfers;
 
 \cd :jaffle_previous_dir

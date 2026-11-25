@@ -4,7 +4,7 @@ id: 11b413cb-4fbb-40ed-8689-056f24203024
 name: jaffle
 version: v1.0.0
 status: production
-createdAt: 2026-10-10T09:49:58.889499876Z
+createdAt: 2026-11-25T06:53:13.423615Z
 sources:
   - name: jaffle
     plugin: postgres
@@ -61,15 +61,23 @@ jobs:
           tableType: transaction
           historyMode: append
           eventTimeCol: tweeted_at
+        supply_deliveries:
+          tableType: transaction
+          historyMode: append
+          eventTimeCol: delivered_at
+        store_transfers:
+          tableType: transaction
+          historyMode: append
+          eventTimeCol: transferred_at
     runs:
       - name: full
         strategy: full
 plugins:
   source:
     - plugin: postgres
-      version: 4.10.3
+      version: 4.19.3
       registry: local
   target:
     - plugin: duckdb
-      version: 2.13.4
+      version: 2.21.2
       registry: local

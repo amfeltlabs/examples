@@ -31,11 +31,12 @@ import sys
 
 DEFAULT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "counts.yaml")
 
-# The seven tables of the model, schema-qualified as the source names them, and the bare
-# names the warehouse layers use.
+# The nine tables of the model, schema-qualified as the source names them, and the bare
+# names the warehouse layers use. The last two hold no rows (db/load.sql).
 SOURCE_TABLES = (
     "sales.customers", "sales.stores", "sales.orders", "sales.order_items",
     "catalog.products", "catalog.supplies", "marketing.tweets",
+    "catalog.supply_deliveries", "sales.store_transfers",
 )
 BARE_TABLES = tuple(t.split(".", 1)[1] for t in SOURCE_TABLES)
 RUNS = ("run1", "run2")

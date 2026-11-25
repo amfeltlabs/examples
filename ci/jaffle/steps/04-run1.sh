@@ -5,9 +5,10 @@
 # Each source table gets a staging table (the latest copy of the source), a history table,
 # and two bridge views over the history: _act with the open rows and _hst with all of them.
 # The history of the four SCD2 tables holds every version of every row, and closes one
-# when the row changes or is deleted; the history of the three append tables holds every
-# row it has seen, and closes none. All seven tables share one schema per layer:
-# jaffle_stg, jaffle_hst and jaffle_bdg.
+# when the row changes or is deleted; the history of the five append tables holds every
+# row it has seen, and closes none. All nine tables share one schema per layer:
+# jaffle_stg, jaffle_hst and jaffle_bdg. supply_deliveries and store_transfers hold no
+# rows, so each of their layers counts 0.
 set -eu
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"

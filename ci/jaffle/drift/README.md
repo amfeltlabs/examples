@@ -13,7 +13,7 @@ class under the demo organization's auto-merge rule, with no `driftPolicy` in th
 | `scenario.py` | The scenario: `plan`, `check`, `mutations`, `gate` and `run` |
 | `test_scenario.py` | Tests of the checks and of the assertions the live run makes |
 | `REQUIRES` | The api and agent releases the live run needs |
-| `unannotated.odcs.yaml` | The contract the quickstart shipped before E1, for the `tax_rate` negative case |
+| `unannotated.odcs.yaml` | The contract in the unannotated form the quickstart shipped before E1, as an import without `--annotated` writes it, for the `tax_rate` negative case |
 
 ## What runs now
 
