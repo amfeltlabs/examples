@@ -28,6 +28,8 @@ SELECT pg_catalog.concat_ws(E'\t', 'source', t.tbl, t.n)
         UNION ALL SELECT 'catalog.products', (SELECT count(*) FROM ONLY catalog.products)
         UNION ALL SELECT 'catalog.supplies', (SELECT count(*) FROM ONLY catalog.supplies)
         UNION ALL SELECT 'marketing.tweets', (SELECT count(*) FROM ONLY marketing.tweets)
+        UNION ALL SELECT 'catalog.supply_deliveries', (SELECT count(*) FROM ONLY catalog.supply_deliveries)
+        UNION ALL SELECT 'sales.store_transfers', (SELECT count(*) FROM ONLY sales.store_transfers)
        ) AS t
  ORDER BY t.tbl COLLATE "C";
 

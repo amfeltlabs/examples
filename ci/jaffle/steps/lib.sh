@@ -87,7 +87,7 @@ check_counts() {
     sql=""
     n=0
     for layer in staging history bridge_act bridge_hst; do
-        for object in customers stores orders order_items products supplies tweets; do
+        for object in customers stores orders order_items products supplies tweets supply_deliveries store_transfers; do
             case $layer in
                 staging) relation=jaffle_stg.$object ;;
                 history) relation=jaffle_hst.$object ;;
@@ -102,7 +102,7 @@ check_counts() {
 
     mismatches=0
     seen=0
-    printf '%-11s %-12s %9s %9s\n' layer object expected actual
+    printf '%-11s %-17s %9s %9s\n' layer object expected actual
     while read -r _ layer object count; do
         seen=$((seen + 1))
         want=$(expected "runs.$run.$layer.$object")
@@ -111,7 +111,7 @@ check_counts() {
             mark="  <-- differs"
             mismatches=$((mismatches + 1))
         fi
-        printf '%-11s %-12s %9s %9s%s\n' "$layer" "$object" "$want" "$count" "$mark"
+        printf '%-11s %-17s %9s %9s%s\n' "$layer" "$object" "$want" "$count" "$mark"
     done <<EOF
 $actual
 EOF

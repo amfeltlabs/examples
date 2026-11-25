@@ -53,22 +53,19 @@ YAML
     (cd work && amfelt add-target warehouse duckdb \
         --db-path warehouse/jaffle.duckdb --level warn)
 
-    step "Adding the job: every table with rows, through staging and history to the bridge layer"
-    # supply_deliveries and store_transfers hold no rows: they are in the source for their
-    # keys, which the contract records, and the job leaves them out.
+    step "Adding the job: every table, through staging and history to the bridge layer"
     (cd work && amfelt add-job load --source jaffle --target warehouse \
-        --include "*" --exclude "supply_deliveries,store_transfers" \
-        --layer bridge --schema-prefix jaffle --level warn)
+        --include "*" --layer bridge --schema-prefix jaffle --level warn)
 
-    step "Choosing each table's type and history: SCD2 for the four master and reference tables, append for the three transaction tables"
+    step "Choosing each table's type and history: SCD2 for the four master and reference tables, append for the five transaction tables"
     # SCD2 history closes a row's version when the row changes or is deleted, and opens a
     # new one for a change. Append history keeps every row it has seen, deleted ones
     # included, and closes nothing. add-job --history-mode sets one mode for every table
     # of the job, and advise --apply writes per-table settings that an AI model
     # recommends, which needs an API key and may differ from one call to the next. The
     # counts this tutorial publishes need these exact settings per table, so they are
-    # written into the job's select block, after the exclude list. orders and tweets also
-    # name the column that holds their event time.
+    # written into the job's select block, after the include list. orders, tweets,
+    # supply_deliveries and store_transfers also name the column that holds their event time.
     OBJECTS=$(cat <<'YAML'
       objects:
         customers:
@@ -94,10 +91,18 @@ YAML
           tableType: transaction
           historyMode: append
           eventTimeCol: tweeted_at
+        supply_deliveries:
+          tableType: transaction
+          historyMode: append
+          eventTimeCol: delivered_at
+        store_transfers:
+          tableType: transaction
+          historyMode: append
+          eventTimeCol: transferred_at
 YAML
 )
     export OBJECTS
-    awk '{ print } /^        - store_transfers$/ { print ENVIRON["OBJECTS"] }' work/amfelt.yaml >work/amfelt.yaml.new
+    awk '{ print } /^        - "\*"$/ { print ENVIRON["OBJECTS"] }' work/amfelt.yaml >work/amfelt.yaml.new
     mv work/amfelt.yaml.new work/amfelt.yaml
 fi
 

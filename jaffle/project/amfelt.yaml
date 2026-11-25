@@ -4,7 +4,7 @@ id: 11b413cb-4fbb-40ed-8689-056f24203024
 name: jaffle
 version: v1.0.0
 status: production
-createdAt: 2026-11-24T10:35:12.970654Z
+createdAt: 2026-11-25T06:53:13.423615Z
 sources:
   - name: jaffle
     plugin: postgres
@@ -37,9 +37,6 @@ jobs:
         historyMode: scd2
       include:
         - "*"
-      exclude:
-        - supply_deliveries
-        - store_transfers
       objects:
         customers:
           tableType: master
@@ -64,6 +61,14 @@ jobs:
           tableType: transaction
           historyMode: append
           eventTimeCol: tweeted_at
+        supply_deliveries:
+          tableType: transaction
+          historyMode: append
+          eventTimeCol: delivered_at
+        store_transfers:
+          tableType: transaction
+          historyMode: append
+          eventTimeCol: transferred_at
     runs:
       - name: full
         strategy: full
