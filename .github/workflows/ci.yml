@@ -15,13 +15,15 @@ on:
         description: The ref to check out; empty checks out the triggering ref
         type: string
         default: ""
-    # The two secrets the tutorial job needs, and the only ones a caller passes: the org
-    # App whose token reads the agent and plugin releases.
+    # The two secrets the tutorial job needs, and the only ones a caller passes: a
+    # read-only App whose token reads the agent and plugin releases. This repository is
+    # public, so it holds that App's own repository secrets and never the org App's, whose
+    # key writes to every repository.
     secrets:
-      APP_ID:
-        description: The id of the org App that reads the agent and plugin releases
+      RELEASES_READ_APP_CLIENT_ID:
+        description: The client id of the read-only App that reads the agent and plugin releases
         required: true
-      APP_PRIVATE_KEY:
+      RELEASES_READ_APP_PRIVATE_KEY:
         description: The private key of that App
         required: true
   # Runs every job against an existing ref, such as a release tag, with the workflow and
@@ -535,7 +537,8 @@ jobs:
   #
   # Until the release channel exists (roadmap#763), the CLI and the plugins come from
   # private GitHub releases of amfeltlabs/agent and amfeltlabs/hub, which the workflow
-  # token cannot read: a contents-read token of the org App reads them. tutorial.sh still
+  # token cannot read: a contents-read token of a read-only App installed on those two
+  # repositories reads them. tutorial.sh still
   # checks the internal quickstart image project/IMAGE pins, which is private as well: the
   # workflow token reads it, which needs this repository's read access to the ghcr.io
   # package.
@@ -570,8 +573,8 @@ jobs:
         id: release-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ secrets.APP_ID }}
-          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          client-id: ${{ secrets.RELEASES_READ_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASES_READ_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: agent,hub
           permission-contents: read

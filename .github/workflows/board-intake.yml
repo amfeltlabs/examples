@@ -8,6 +8,9 @@ jobs:
     uses: amfeltlabs/github-actions/.github/workflows/board-intake.yaml@main
     with:
       issue: "${{ github.repository }}#${{ github.event.issue.number }}"
+    # This repository is public, so it passes a board-intake App of its own, holding only
+    # what routing an issue needs, and never the org App, whose key writes to every
+    # repository. The shared workflow takes it in its APP_ID and APP_PRIVATE_KEY slots.
     secrets:
-      APP_ID: ${{ secrets.APP_ID }}
-      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+      APP_ID: ${{ secrets.BOARD_INTAKE_APP_CLIENT_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.BOARD_INTAKE_APP_PRIVATE_KEY }}
